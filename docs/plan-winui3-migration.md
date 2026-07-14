@@ -167,9 +167,14 @@ lignes, throttle stats 1/s, `ListView` virtualisée, badge de statut
 
 ### Phase 6 — Vérification
 
-`dotnet build` + `dotnet test` verts, exécution manuelle réelle (nécessite
-ffmpeg/ffprobe installés — **absents du PATH aujourd'hui**), puis audit
-`reviewer` (Clean Arch, DDD, CQRS, non-fuite de la clé).
+`dotnet build` + `dotnet test` verts, puis audit `reviewer` (Clean Arch, DDD,
+CQRS, non-fuite de la clé).
+
+**Vérification bout-en-bout réelle — possible** : ffmpeg/ffprobe sont installés
+(`C:\Users\oliver254\app\ffmpeg\bin\`, hors PATH) et NVENC est disponible
+(RTX 5070 Ti). La commande de la spec a déjà été validée contre le vrai ffmpeg
+(exit 0, débit conforme au CBR). Une vraie diffusion est donc testable — ce que
+l'on croyait impossible tant qu'on pensait ffmpeg absent.
 
 ## 8. Risques
 
@@ -178,7 +183,7 @@ ffmpeg/ffprobe installés — **absents du PATH aujourd'hui**), puis audit
 | ~~R1~~ | ~~Pas de template WinUI 3 ⇒ csproj manuel~~ | ✅ **Levé** : spike validé (build vert + fenêtre native). Config exacte en §7 phase 0. Repli WPF écarté. |
 | R2 | `FileOpenPicker` en non-empaqueté exige l'interop HWND WinRT | Connu, documenté, ~5 lignes |
 | R3 | UI figée par le débit de logs ffmpeg | Ring buffer borné + throttle (§5) — non négociables |
-| R4 | ffmpeg/ffprobe absents du PATH | Sans impact sur build/tests ; bloque seulement l'exécution réelle |
+| ~~R4~~ | ~~ffmpeg/ffprobe absents du PATH~~ | ✅ **Levé** : ffmpeg/ffprobe **sont installés** (`C:\Users\oliver254\app\ffmpeg\bin\`, hors PATH) ; NVENC dispo (RTX 5070 Ti). Chemin câblé dans `appsettings.Development.json`. La commande de la spec a été **validée contre le vrai ffmpeg** (exit 0). La vérification bout-en-bout est donc **possible**. |
 
 ## 9. Ce qui ne change pas
 

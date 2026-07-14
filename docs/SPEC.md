@@ -70,9 +70,20 @@ monitoring temps réel.
   **Aucun SDK ni runtime .NET 9** → la spec disait ".NET 9" mais ce serait non
   exécutable ici. **Cible retenue : `net10.0` / C# 14** (LTS, successeur direct,
   aucune API de la spec impactée). À documenter en ADR.
-- ffmpeg/ffprobe : **absents du PATH** → la vérification au démarrage et le chemin
-  configurable (prévus par la spec) sont d'autant plus nécessaires. Les tests unitaires
-  de la première itération n'exécutent pas le binaire.
+- ffmpeg/ffprobe : **présents**, mais **hors du PATH** →
+  `C:\Users\oliver254\app\ffmpeg\bin\` (build gyan.dev du 2026-01-05).
+  Chemin câblé dans `appsettings.Development.json` (section `Nagare:Ffmpeg`) ;
+  laisser vide sur une autre machine pour résoudre depuis le PATH.
+  Le chemin configurable prévu par la spec est donc bien nécessaire.
+- **NVENC disponible** : `h264_nvenc`, `hevc_nvenc`, `av1_nvenc` et `libx264` sont tous
+  présents ; GPU **GeForce RTX 5070 Ti** (driver 610.47). Toute la chaîne d'encodage
+  visée par la spec est opérationnelle.
+- **La commande exacte de la spec a été validée contre le vrai ffmpeg** (2026-07-06) :
+  `-re -stream_loop -1 -i in.mp4 -c:v h264_nvenc -preset p2 -rc cbr -b:v 3000k
+  -maxrate 3000k -bufsize 3000k -g 60 -keyint_min 60 -c:a aac -b:a 128k -ar 48000
+  -f flv …` → exit code 0, NVENC encode, débit conforme au CBR 3000k demandé.
+  (Le *golden test* prouve la conformité de la **chaîne** à la spec ; ceci prouve que
+  **ffmpeg l'accepte** — les deux sont nécessaires, aucun ne remplace l'autre.)
 - Le dépôt n'est pas encore un dépôt git.
 - Décisions utilisateur du 2026-07-06 (priment sur le texte ci-dessus) :
   le code est **intégralement en anglais** (identifiants, fichiers, enums) ;
