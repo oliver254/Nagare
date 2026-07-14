@@ -13,4 +13,10 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Le message de la barrière 3 du coordinateur est une constante interne : le test-garde
+         de la SPEC §5 s'y assujettit (source de vérité unique, pas de chaîne dupliquée). -->
+    <InternalsVisibleTo Include="Nagare.UnitTests" />
+  </ItemGroup>
+
 </Project>

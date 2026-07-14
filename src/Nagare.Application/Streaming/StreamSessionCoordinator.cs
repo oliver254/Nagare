@@ -40,6 +40,14 @@ public sealed class StreamSessionCoordinator
     private const int LogCapacity = 1000;
     private static readonly TimeSpan GracePeriod = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// Logged when barrier 3 aborts a relaunch (a stop was requested while a ReconnectDue was
+    /// already in the mailbox). Internal on purpose: the SPEC §5 guard test asserts this exact
+    /// message to PROVE the barrier fired — asserting only "no second runner was created" turned
+    /// out to pass for the wrong reason under an innocuous-looking reorder of the exit handler.
+    /// </summary>
+    internal const string StopAbortedReconnectLogMessage = "Reconnection abandoned: a stop has been requested.";
+
     /// <summary>How long <see cref="DisposeAsync"/> waits for the loop before closing without it.</summary>
     private static readonly TimeSpan LoopShutdownTimeout = TimeSpan.FromSeconds(5);
 
@@ -408,7 +416,7 @@ public sealed class StreamSessionCoordinator
             // posted, so this message is ahead of it in the FIFO and still carries the current epoch.
             // A stop is on its way — putting ffmpeg back on air now, to kill it milliseconds later,
             // is exactly the ghost broadcast we refuse.
-            _logger.LogInformation("Reconnection abandoned: a stop has been requested.");
+            _logger.LogInformation(StopAbortedReconnectLogMessage);
             return;
         }
 

@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using Nagare.Application.Abstractions;
@@ -46,6 +45,7 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
     private readonly FakeFfmpegCommandBuilder _commandBuilder = new();
     private readonly FakeFfmpegProcessRunnerFactory _runners = new();
     private readonly FakeTimeProvider _time = new();
+    private readonly CapturingLogger<StreamSessionCoordinator> _logger = new();
     private readonly StreamSessionCoordinator _coordinator;
     private readonly ProfileId _profileId;
     private readonly ChannelId _channelId;
@@ -77,7 +77,7 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
             _runners,
             Options.Create(Settings),
             _time,
-            NullLogger<StreamSessionCoordinator>.Instance);
+            _logger);
     }
 
     public Task InitializeAsync() => Task.CompletedTask;
@@ -424,6 +424,13 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
         gate.SetResult();                                            // the loop resumes: ReconnectDue first
 
         await stop.WaitAsync(Budget);
+
+        // The conclusion is SUBORDINATED to the proof that barrier 3 actually fired: the
+        // ReconnectDue was consumed AND abandoned. Asserting CreateCount alone proved hollow —
+        // an innocuous reorder of the exit handler (cleanup before scheduling) starves the fake
+        // timer of its Advance, no ReconnectDue is ever posted, and the count passes for the
+        // wrong reason with the barrier deleted (found by the review's mutation run).
+        Assert.Equal(1, _logger.CountOf(StreamSessionCoordinator.StopAbortedReconnectLogMessage));
 
         Assert.Equal(1, _runners.CreateCount);   // the relaunch gave up: no ffmpeg was ever put back on air
         Assert.Equal(SessionStatus.Stopped, _coordinator.Current!.Status);

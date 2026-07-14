@@ -9,7 +9,7 @@ avec un contrôle fin de l'encodage et un monitoring temps réel.
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
 [![C#](https://img.shields.io/badge/C%23-14-239120)](https://learn.microsoft.com/dotnet/csharp/)
-[![Tests](https://img.shields.io/badge/tests-164%20✓-success)](tests/)
+[![Tests](https://img.shields.io/badge/tests-192%20✓-success)](tests/)
 [![Licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
 </div>
@@ -24,7 +24,7 @@ Nagare **n'est pas encore utilisable** en l'état.
 | Couche | État |
 |---|---|
 | **Domain** — agrégats, machine à états, invariants | ✅ complet, testé |
-| **Application** — CQRS, coordinateur de session | ✅ complet — refonte du coordinateur en cours ([ADR-0008](docs/adr/0008-synchronisation-coordinateur.md)) |
+| **Application** — CQRS, coordinateur de session | ✅ complet — coordinateur en boucle séquentielle sans verrou ([ADR-0008](docs/adr/0008-synchronisation-coordinateur.md)) |
 | **Infrastructure** — ffmpeg, chiffrement, persistance | ✅ complet, testé |
 | **Presentation** — interface Windows | 🚧 **migration Blazor Server → WinUI 3** ([ADR-0006](docs/adr/0006-winui3-natif.md)) |
 
@@ -46,7 +46,8 @@ Le plan de migration est public : [`docs/plan-winui3-migration.md`](docs/plan-wi
 - **Pilotage du process** — démarrage, arrêt propre, annulation, capture de `stdout`/`stderr`,
   kill de ffmpeg à la fermeture de l'application.
 - **Monitoring temps réel** — parsing de la sortie ffmpeg (`frame=`, `fps=`, `bitrate=`,
-  `speed=`, drops) → statut de session et indicateur de santé (`speed < 1.0x` = alerte).
+  `speed=`, drops) → statut de session et indicateur de santé (alerte si `speed < 1.0x`
+  ou si les frames droppées augmentent).
 - **Résilience** — détection de chute du flux, redémarrage automatique avec **backoff
   exponentiel** et abandon après N tentatives.
 
@@ -115,7 +116,7 @@ ffmpeg -encoders | grep nvenc
 git clone https://github.com/oliver254/Nagare.git
 cd Nagare
 dotnet build Nagare.slnx
-dotnet test  Nagare.slnx     # 164 tests
+dotnet test  Nagare.slnx     # 192 tests
 ```
 
 ### Configurer ffmpeg
@@ -144,7 +145,7 @@ src/
   Nagare.Infrastructure/   FfmpegCommandBuilder, process runner, scrubber, DPAPI, persistance JSON
   Nagare.WinApp/           interface Windows (WinUI 3)
 tests/
-  Nagare.UnitTests/        164 tests
+  Nagare.UnitTests/        192 tests
 docs/
   SPEC.md                  spécification produit
   ARCHITECTURE.md          architecture détaillée, ports, contrats
