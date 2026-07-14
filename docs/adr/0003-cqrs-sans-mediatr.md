@@ -1,6 +1,9 @@
 # ADR-0003 — CQRS sans MediatR : handlers maison + DI directe
 
-Statut : accepté — 2026-07-06
+Statut : ⛔ **REMPLACÉ par l'ADR-0007** (BrilliantMediator) — 2026-07-06.
+Motif : BrilliantMediator est un mediator source-generated sans réflexion —
+l'échappatoire que la spec autorisait — et le pivot desktop annule l'objection
+de scoping. Conservé pour l'historique.
 
 ## Contexte
 

@@ -1,6 +1,8 @@
 # ADR-0002 — Blazor Server pour la présentation (vs Avalonia)
 
-Statut : accepté — 2026-07-06
+Statut : ⛔ **REMPLACÉ par l'ADR-0006** (WinUI 3 natif) — 2026-07-06.
+Motif : l'exécution ouvrait un navigateur ; l'utilisateur veut une vraie
+application Windows. Conservé pour l'historique.
 
 ## Contexte
 
