@@ -8,6 +8,23 @@
     <ImplicitUsings>enable</ImplicitUsings>
 
     <!--
+      TOUTE la solution est en x64, y compris les bibliothèques.
+
+      WinUI 3 n'accepte PAS « AnyCPU » : il lui faut une plateforme concrète (ADR-0006).
+      Nagare.WinApp déclarait donc x64 pendant que les autres projets restaient en AnyCPU
+      par défaut — et Visual Studio refusait d'ouvrir la solution, incapable de mapper le
+      « Any CPU » de la solution sur un projet qui ne l'expose pas. (La ligne de commande
+      ne s'en apercevait pas : elle construit chaque projet isolément.)
+
+      Aligner tout le monde sur x64 est ce que fait le template officiel WinUI, et c'est
+      cohérent : cette solution produit une APPLICATION WINDOWS 64 bits, pas une
+      bibliothèque portable. Le Platform par défaut est forcé plus bas, sans quoi MSBuild
+      retomberait sur AnyCPU en ligne de commande — une plateforme désormais non déclarée.
+    -->
+    <Platforms>x64</Platforms>
+    <Platform Condition="'$(Platform)' == '' or '$(Platform)' == 'AnyCPU'">x64</Platform>
+
+    <!--
       La Definition of Done (CONTRIBUTING.md) exige « 0 erreur, 0 avertissement ».
       Sans ceci, c'est une intention que rien n'empêche de régresser : on la rend
       mécanique. Inclut les avertissements d'audit NuGet (NU19xx) — une dépendance
