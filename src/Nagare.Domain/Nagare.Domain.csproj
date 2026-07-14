@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Nagare.Domain : aucune dépendance — pas même Microsoft.Extensions.* (ARCHITECTURE §1). -->
+
+</Project>

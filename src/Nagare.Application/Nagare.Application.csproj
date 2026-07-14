@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nagare.Domain\Nagare.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Abstractions uniquement : DI explicite (ADR-0003), IHostedService (cycle de vie du coordinateur),
+         Options (ReconnectSettings) et logging (drainage des événements de domaine). -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

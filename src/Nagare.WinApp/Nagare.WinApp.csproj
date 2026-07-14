@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MudBlazor" Version="9.6.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Composition root : Infrastructure n'est référencée que pour AddNagareInfrastructure (ARCHITECTURE §1). -->
+    <ProjectReference Include="..\Nagare.Application\Nagare.Application.csproj" />
+    <ProjectReference Include="..\Nagare.Domain\Nagare.Domain.csproj" />
+    <ProjectReference Include="..\Nagare.Infrastructure\Nagare.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

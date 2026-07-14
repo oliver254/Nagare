@@ -1,0 +1,12 @@
+namespace Nagare.Domain.Common;
+
+public abstract class AggregateRoot
+{
+    private readonly List<IDomainEvent> _domainEvents = [];
+
+    public IReadOnlyList<IDomainEvent> DomainEvents => _domainEvents;
+
+    public void ClearDomainEvents() => _domainEvents.Clear();
+
+    protected void RaiseDomainEvent(IDomainEvent evt) => _domainEvents.Add(evt);
+}
