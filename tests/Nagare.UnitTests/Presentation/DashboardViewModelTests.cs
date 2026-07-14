@@ -45,6 +45,51 @@ public sealed class DashboardViewModelTests
     }
 
     [Fact]
+    public async Task Logs_reach_the_collection_only_through_the_ui_thread()
+    {
+        // ISessionMonitor.LogAppended fires on the ffmpeg STDERR READER thread. Touching the
+        // ObservableCollection from there is RPC_E_WRONG_THREAD in a real window — or, worse, a
+        // silent corruption. The line MUST be marshalled.
+        //
+        // An INLINE dispatcher cannot see the difference: marshalled or not, the collection ends up
+        // filled either way. That hole let a mutation deleting every Post() from the log path stay
+        // green across all 24 view-model tests. A DEFERRED dispatcher makes the difference visible:
+        // until the UI thread gets its turn, the collection must stay UNTOUCHED.
+        var (vm, _, monitor, dispatcher, _) = await CreateLoadedAsync();
+        dispatcher.Deferred = true;
+
+        monitor.RaiseLog("line 1");
+        monitor.RaiseLog("line 2");
+
+        Assert.Empty(vm.Logs);   // the UI thread has not run yet: nothing may have been written
+
+        dispatcher.Pump();
+
+        Assert.Equal(new[] { "line 1", "line 2" }, vm.Logs);
+    }
+
+    [Fact]
+    public async Task A_burst_of_log_lines_schedules_a_single_ui_callback()
+    {
+        // The other half of anti-freeze rule 1 (plan §5): the runner forwards EVERY ffmpeg line,
+        // progress lines included. One dispatcher callback per line would flood the UI thread. The
+        // lines are queued and a SINGLE drain is scheduled until it runs — invisible to an inline
+        // dispatcher, where PostCount can only ever equal the number of lines.
+        var (vm, _, monitor, dispatcher, _) = await CreateLoadedAsync();
+        dispatcher.Deferred = true;
+
+        for (var i = 1; i <= 200; i++)
+            monitor.RaiseLog($"line {i}");
+
+        Assert.Equal(1, dispatcher.PendingCount);   // 200 lines, ONE callback
+
+        dispatcher.Pump();
+
+        Assert.Equal(200, vm.Logs.Count);           // and not one line was lost
+        Assert.Equal("line 200", vm.Logs[^1]);
+    }
+
+    [Fact]
     public async Task Stats_are_throttled_to_one_ui_update_per_second()
     {
         var (vm, time, monitor, dispatcher, _) = await CreateLoadedAsync();

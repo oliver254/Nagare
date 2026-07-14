@@ -143,7 +143,11 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
         // What Process.Start() throws when the binary is missing, moved or locked by an antivirus.
         _runners.Configure = (runner, _) => runner.StartFailure = new Win32Exception("The system cannot find the file specified.");
 
-        await Assert.ThrowsAsync<Win32Exception>(() => StartAsync());
+        // Re-surfaced as a StreamOperationException rather than the raw Win32Exception: the caller
+        // shows this message on screen, so what crosses the boundary must be scrubbed. The type name
+        // is kept inside the message — the user still learns what actually failed.
+        var surfaced = await Assert.ThrowsAsync<StreamOperationException>(() => StartAsync());
+        Assert.Contains("Win32Exception", surfaced.Message, StringComparison.Ordinal);
 
         var current = _coordinator.Current;
         Assert.NotNull(current);
@@ -151,6 +155,34 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
         Assert.Contains("Win32Exception", current.LastError!, StringComparison.Ordinal);
         Assert.False(_coordinator.HasActiveSession);
         Assert.Equal(1, _runners.Runner(1).DisposeCallCount);
+    }
+
+    [Fact]
+    public async Task StartAsync_WhenTheFailureQuotesTheDestination_ScrubsTheKeyFromWhatReachesTheCaller()
+    {
+        // The exception handed back to the caller lands in an InfoBar, ON SCREEN. LastError was
+        // already scrubbed; THIS is the other path, and it used to propagate the exception raw.
+        // No reachable exception embeds the key today — but that is luck, not a guarantee.
+        _runners.Configure = (runner, _) => runner.StartFailure = new InvalidOperationException(
+            $"ffmpeg refused the destination {FakeFfmpegCommandBuilder.Destination}");
+
+        var surfaced = await Assert.ThrowsAsync<StreamOperationException>(() => StartAsync());
+
+        Assert.DoesNotContain(FakeFfmpegCommandBuilder.StreamKey, surfaced.Message, StringComparison.Ordinal);
+        Assert.Contains(ProtectedStreamKey.Mask, surfaced.Message, StringComparison.Ordinal);
+
+        // ToString() as well: one careless interpolation in a future view would print the lot.
+        Assert.DoesNotContain(FakeFfmpegCommandBuilder.StreamKey, surfaced.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StartAsync_WithADomainViolation_KeepsTheDomainExceptionType()
+    {
+        // A DomainException must NOT be wrapped: its message is ours, it carries no secret, and the
+        // UI relies on its TYPE to tell a validation error apart from an infrastructure failure.
+        await StartRunningAsync();
+
+        await Assert.ThrowsAsync<DomainException>(() => StartAsync());   // a session is already active
     }
 
     [Fact]

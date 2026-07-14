@@ -124,8 +124,19 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         try
         {
-            await _host.StopAsync();
-            await DisposeHostAsync();
+            try
+            {
+                await _host.StopAsync();
+            }
+            finally
+            {
+                // The disposal MUST run even if StopAsync threw or timed out (HostOptions.ShutdownTimeout
+                // is 30s by default: past it the token is cancelled and the host rethrows). Disposal is
+                // what reaches the coordinator's last-resort Kill(entireProcessTree: true). Skipping it
+                // would let the window close, the process die — and FFMPEG KEEP BROADCASTING, orphaned.
+                // SPEC §5 forbids exactly that.
+                await DisposeHostAsync();
+            }
         }
         catch (Exception ex)
         {

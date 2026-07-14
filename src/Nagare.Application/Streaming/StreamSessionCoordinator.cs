@@ -266,6 +266,11 @@ public sealed class StreamSessionCoordinator
         }
         catch (Exception ex)
         {
+            // Scrub BEFORE tearing the session down: EndSessionAsync clears _command, and with it the
+            // secrets the scrubber needs. Doing it after would hand the caller — and the screen — the
+            // raw text, key included. (Caught by the test, not by reading the code.)
+            var surfaced = Surface(ex);
+
             if (session is not null)
                 FailSession(session, Describe(ex));   // never leave a session Starting without a runner
 
@@ -274,7 +279,7 @@ public sealed class StreamSessionCoordinator
             if (ex is OperationCanceledException canceled)
                 message.Completion.TrySetCanceled(canceled.CancellationToken);
             else
-                message.Completion.TrySetException(ex);
+                message.Completion.TrySetException(surfaced);
         }
     }
 
@@ -321,8 +326,10 @@ public sealed class StreamSessionCoordinator
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error while stopping the session.");
+
+            var surfaced = Surface(ex);   // before EndSessionAsync clears the secrets (see HandleStartAsync)
             await EndSessionAsync();
-            message.Completion.TrySetException(ex);
+            message.Completion.TrySetException(surfaced);
         }
     }
 
@@ -622,6 +629,19 @@ public sealed class StreamSessionCoordinator
     /// stream key on screen. The secrets are right here; honouring the contract costs one call.
     /// </summary>
     private string Describe(Exception ex) => Scrub($"{ex.GetType().Name}: {ex.Message}");
+
+    /// <summary>
+    /// Prepares an exception to cross the boundary to the caller — and therefore to the SCREEN, where
+    /// the view model shows its Message in an InfoBar.
+    ///
+    /// <see cref="DomainException"/> passes through untouched: its message is ours, it holds no
+    /// secret, and the UI relies on its type to tell a validation error from a failure. Anything else
+    /// is an infrastructure exception whose text we do not control — it is re-surfaced SCRUBBED.
+    /// Today none of them embeds the ffmpeg arguments, but that is luck, not a guarantee, and this is
+    /// the one path that leads straight to the user's eyes.
+    /// </summary>
+    private Exception Surface(Exception ex)
+        => ex is DomainException ? ex : new StreamOperationException(Describe(ex));
 
     /// <summary>Replaces every secret of the active command by the mask, longest first.</summary>
     private string Scrub(string text)
