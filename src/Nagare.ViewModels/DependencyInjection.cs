@@ -1,10 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
-using Nagare.Presentation.ViewModels;
 
-namespace Nagare.Presentation;
+namespace Nagare.ViewModels;
 
 /// <summary>
-/// DI registration of the presentation layer (plan §7, phase 4).
+/// DI registration of the ViewModels layer (plan §7, phase 4).
 ///
 /// The ViewModels are TRANSIENT: one per page instance, created when the page loads and disposed
 /// when it unloads. <see cref="DashboardViewModel"/> subscribes to <c>ISessionMonitor</c>, and a
@@ -23,7 +22,7 @@ namespace Nagare.Presentation;
 /// </summary>
 public static class DependencyInjection
 {
-    public static IServiceCollection AddNagarePresentation(this IServiceCollection services)
+    public static IServiceCollection AddNagareViewModels(this IServiceCollection services)
     {
         services.AddTransient<ProfilesViewModel>();
         services.AddTransient<ChannelsViewModel>();

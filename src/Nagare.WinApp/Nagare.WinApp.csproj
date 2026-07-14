@@ -44,9 +44,12 @@
     <ProjectReference Include="..\Nagare.Application\Nagare.Application.csproj" />
     <ProjectReference Include="..\Nagare.Domain\Nagare.Domain.csproj" />
     <ProjectReference Include="..\Nagare.Infrastructure\Nagare.Infrastructure.csproj" />
-    <!-- Les ViewModels vivent hors du projet WinUI : cible net10.0, donc testables par
-         Nagare.UnitTests (net10.0), qui ne peut pas référencer un TFM Windows. -->
-    <ProjectReference Include="..\Nagare.Presentation\Nagare.Presentation.csproj" />
+    <!-- Les ViewModels vivent dans leur propre projet — PAS pour la testabilité (les fusionner
+         dans Application, qui cible net10.0, les rendrait tout aussi testables), mais parce
+         qu'Application ne doit dépendre ni d'une lib MVVM ni de la notion de thread UI : ces
+         paquets couleraient EN TRANSITIF dans Infrastructure, qui référence Application.
+         Raisonnement complet dans ARCHITECTURE.md §1. -->
+    <ProjectReference Include="..\Nagare.ViewModels\Nagare.ViewModels.csproj" />
   </ItemGroup>
 
 </Project>

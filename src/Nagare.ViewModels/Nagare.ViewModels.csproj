@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <RootNamespace>Nagare.Presentation</RootNamespace>
+    <RootNamespace>Nagare.ViewModels</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,7 +16,7 @@
     <!-- Les ViewModels ne parlent au métier QUE par IMediator (ADR-0007). -->
     <PackageReference Include="BrilliantMediator" Version="3.0.0" />
 
-    <!-- AddNagarePresentation() : enregistrement des ViewModels. -->
+    <!-- AddNagareViewModels() : enregistrement des ViewModels. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
   </ItemGroup>
 

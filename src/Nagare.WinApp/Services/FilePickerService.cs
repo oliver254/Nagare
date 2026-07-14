@@ -1,4 +1,4 @@
-using Nagare.Presentation.Abstractions;
+using Nagare.ViewModels.Abstractions;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
 

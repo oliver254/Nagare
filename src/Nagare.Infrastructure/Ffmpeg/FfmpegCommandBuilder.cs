@@ -68,7 +68,7 @@ public sealed class FfmpegCommandBuilder(IStreamKeyProtector keyProtector) : IFf
         args.Add(video.Preset);
 
         // 6 - -rc cbr|vbr (NVENC only; libx264 has no -rc)
-        if (video.Codec is VideoCodec.H264Nvenc or VideoCodec.HevcNvenc)
+        if (video.Codec.RequiresNvenc())
         {
             args.Add("-rc");
             args.Add(RateControlArg(video.RateControl));

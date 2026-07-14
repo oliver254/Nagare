@@ -1,7 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using Nagare.Domain.Common;
 
-namespace Nagare.Presentation.ViewModels;
+namespace Nagare.ViewModels;
 
 /// <summary>
 /// Shared error surface of the pages: an <c>InfoBar</c> fed by <see cref="ErrorMessage"/>

@@ -112,7 +112,7 @@ public sealed class StreamSessionCoordinator
         _loop = Task.Run(RunAsync);
     }
 
-    public bool HasActiveSession => _session is { Status: not (SessionStatus.Stopped or SessionStatus.Failed) };
+    public bool HasActiveSession => _session is { } session && session.Status.IsActive();
 
     public event Action<SessionSnapshot>? Changed;
     public event Action<string>? LogAppended;

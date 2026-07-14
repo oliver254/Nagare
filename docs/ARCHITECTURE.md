@@ -20,22 +20,27 @@ Nagare.slnx
 │   ├── Nagare.Domain/           # aucune dépendance (pas même Microsoft.Extensions.*)
 │   ├── Nagare.Application/      # → Nagare.Domain (+ BrilliantMediator.Abstractions)
 │   ├── Nagare.Infrastructure/   # → Nagare.Application, Nagare.Domain
-│   ├── Nagare.Presentation/     # → Application + Domain. ViewModels, net10.0, ZÉRO WinUI
+│   ├── Nagare.ViewModels/       # → Application + Domain. ViewModels, net10.0, ZÉRO WinUI
 │   └── Nagare.WinApp/           # → tous (composition root). WinUI 3, TFM Windows
 └── tests/
-    └── Nagare.UnitTests/        # → Domain + Application + Infrastructure + Presentation
+    └── Nagare.UnitTests/        # → Domain + Application + Infrastructure + ViewModels
 ```
 
 ```mermaid
 graph TD
-    Win[Nagare.WinApp<br/>WinUI 3 · vues XAML · composition root] --> Pres[Nagare.Presentation<br/>ViewModels · net10.0 · sans WinUI]
+    Win[Nagare.WinApp<br/>WinUI 3 · vues XAML · composition root] --> Vm[Nagare.ViewModels<br/>ViewModels · net10.0 · sans WinUI]
     Win --> Infra[Nagare.Infrastructure<br/>ffmpeg, Data Protection, JSON]
-    Pres --> App[Nagare.Application<br/>CQRS, ports, coordinateur de session]
+    Vm --> App[Nagare.Application<br/>CQRS, ports, coordinateur de session]
     Infra --> App
     App --> Dom[Nagare.Domain<br/>agrégats, VOs, événements]
     Infra --> Dom
-    Pres --> Dom
+    Vm --> Dom
 ```
+
+> **Pourquoi `Nagare.ViewModels`.** Dans les conventions .NET (Ardalis, Jason Taylor), le mot
+> « Presentation » désigne l'**hôte** — ici `Nagare.WinApp`. Le projet des ViewModels portait
+> autrefois ce nom : il annonçait donc son voisin, tout en ne contenant ni XAML ni fenêtre —
+> trois ViewModels, leur classe de base et deux ports. Il s'appelle maintenant ce qu'il contient.
 
 Règles (DIP) :
 - `Domain` ne référence rien. Zéro package NuGet.
@@ -43,14 +48,44 @@ Règles (DIP) :
 - `WinApp` ne référence `Infrastructure` que pour appeler `services.AddNagareInfrastructure(...)`
   dans `App.xaml.cs`. Les ViewModels n'injectent que `IMediator` et des contrats d'`Application`.
 
-### Pourquoi `Nagare.Presentation` est un projet séparé
+### Pourquoi `Nagare.ViewModels` est un projet séparé
 
-`Nagare.WinApp` cible `net10.0-windows10.0.19041.0` (imposé par WinUI). Un projet de
-tests en `net10.0` **ne peut pas** référencer ce TFM Windows. Garder les ViewModels
-dans `Nagare.WinApp` les rendrait donc **structurellement intestables**.
+L'argument longtemps affiché ici — « sinon les ViewModels seraient intestables, car
+`Nagare.WinApp` cible un TFM Windows » — est **faux**, et il vaut la peine de le dire :
+il aurait suffi de fusionner les ViewModels dans `Nagare.Application` (qui cible
+`net10.0`) pour que les tests les atteignent. L'argument ne défend donc rien.
 
-Les ViewModels vivent en `net10.0` **sans la moindre dépendance WinUI** : ils ne
-connaissent qu'`IMediator`, `ISessionMonitor` et deux abstractions maison
+La vraie raison est une **frontière de dépendances**, et elle tient en trois points.
+
+1. **`Application` ne doit dépendre ni d'une bibliothèque MVVM ni du thread UI.**
+   `CommunityToolkit.Mvvm` (`ObservableObject`, `[RelayCommand]`) est une technologie de
+   *binding*, et `IUiDispatcher` est la notion même de *thread UI* : deux choses dont la
+   couche métier n'a aucune idée à avoir.
+
+2. **Et ces dépendances couleraient EN TRANSITIF dans `Infrastructure`.** C'est le point
+   décisif, et il est vérifiable : `Infrastructure` référence `Application`, donc tout paquet
+   déclaré dans `Application` apparaît dans ses dépendances résolues. Constaté sur
+   `BrilliantMediator`, déclaré dans `Application` **seul** :
+
+   ```
+   $ dotnet list src/Nagare.Infrastructure/Nagare.Infrastructure.csproj package --include-transitive
+      > BrilliantMediator      3.0.0        (transitif)
+   ```
+
+   Fusionner les ViewModels dans `Application`, c'est donc livrer une bibliothèque de binding
+   MVVM au **runner ffmpeg** et aux dépôts JSON. Le compilateur ne s'y opposerait pas : rien
+   n'empêcherait plus `FfmpegProcessRunner` d'hériter d'`ObservableObject`.
+
+3. **La frontière « les ViewModels ne parlent au métier que par `IMediator` » (ADR-0007) est
+   aujourd'hui garantie par le compilateur.** `Nagare.ViewModels` ne référence pas
+   `Infrastructure` : un ViewModel ne *peut pas* appeler un dépôt ou ffmpeg directement, même
+   par erreur. Fusionner les couches dégraderait cette garantie mécanique en simple
+   **convention** — c'est-à-dire en quelque chose qui se viole un vendredi soir.
+
+La testabilité, elle, n'est pas la cause : c'est une **conséquence** agréable de cette
+séparation (les ViewModels sont en `net10.0`, `Nagare.UnitTests` les référence sans WinUI).
+
+Les ViewModels ne connaissent qu'`IMediator`, `ISessionMonitor` et deux abstractions maison
 (`IUiDispatcher`, `IVideoFilePicker`), implémentées côté `WinApp`. `Nagare.WinApp` ne
 garde que le XAML, les converters, l'interop HWND et le composition root.
 
@@ -77,10 +112,10 @@ Nagare.Infrastructure/
   Persistence/   JsonFileStore, JsonStreamProfileRepository, JsonChannelRepository
   DependencyInjection.cs   (AddNagareInfrastructure)
 
-Nagare.Presentation/          # net10.0, AUCUNE dépendance WinUI
-  ViewModels/    DashboardViewModel, ProfilesViewModel, ChannelsViewModel
+Nagare.ViewModels/            # net10.0, AUCUNE dépendance WinUI
+  DashboardViewModel, ProfilesViewModel, ChannelsViewModel, ViewModelBase
   Abstractions/  IUiDispatcher, IVideoFilePicker   (implémentés côté WinApp)
-  DependencyInjection.cs   (AddNagarePresentation, CreateDashboard)
+  DependencyInjection.cs   (AddNagareViewModels, CreateDashboard)
 
 Nagare.WinApp/                # WinUI 3, TFM Windows
   App.xaml(.cs)  composition root : Host builder, config (JSON + User Secrets), DI
@@ -416,6 +451,34 @@ collectés sur l'agrégat et drainés par le coordinateur (§5). On ne mélange 
 | `ValidateMediaFileQuery` | `string FilePath` | `MediaValidationResult` (existe, lisible, durée, résolution, fps, codecs) |
 | `BuildCommandPreviewQuery` | `ProfileId`, `ChannelId`, `InputFilePath` | `string` — ligne de commande **masquée** (spec : afficher avant lancement) |
 | `GetFfmpegEnvironmentQuery` | — | `FfmpegEnvironmentReport` (check au démarrage : binaires + NVENC) |
+| `GetStartPreflightQuery` | `FfmpegEnvironmentReport?`, `StreamProfileDto?`, `ChannelDto?`, `string? InputFilePath`, `MediaValidationResult?` | `StartPreflight` — **la** règle « peut-on démarrer ? », rendue comme un `StartBlockReason` structuré (voir ci-dessous) |
+
+#### `GetStartPreflightQuery` — la politique de démarrage
+
+La règle « peut-on lancer cette diffusion ? » vivait dans le `DashboardViewModel`, écrite en
+phrases françaises, jusqu'au **nom d'une clé de configuration ffmpeg**. Elle est ici, et le
+ViewModel ne fait plus que **traduire le motif en phrase** et exposer `CanStart`.
+
+`StartBlockReason` : `None`, `NotChecked`, `FfmpegMissing`, `FfprobeMissing`, `NvencUnavailable`,
+`SessionAlreadyActive`, `ProfileNotSelected`, `ChannelNotSelected`, `InputFileNotSelected`,
+`InputFileNotFound`, `InputFileUnreadable`.
+
+Deux choix méritent d'être écrits :
+
+- **Les faits coûteux sont passés EN ENTRÉE, pas relus par le handler.** Le rapport
+  d'environnement coûte trois lancements de processus, le rapport ffprobe un quatrième. La query
+  est réévaluée à **chaque changement de sélection** : les relire ferait naître quatre processus
+  à chaque clic dans une ComboBox. Ils sont collectés une fois par leurs propres queries et
+  transmis. *Cacher* est de la plomberie (elle reste chez l'appelant) ; *décider* est la règle
+  (elle est ici). Le seul fait lu en direct est « une session tourne-t-elle ? »
+  (`ISessionMonitor`) : lui seul peut changer sous les pieds de l'appelant.
+- **L'ordre d'évaluation est signifiant** : ce qui est *cassé* (toolchain, fichier illisible,
+  profil NVENC sur machine sans NVENC) prime sur ce qui n'est *pas encore fait* (pas de profil,
+  pas de channel, pas de fichier). Classer « pas de channel » avant « ce fichier est corrompu »
+  **masquerait** l'erreur de fichier à quiconque choisit son fichier avant son channel.
+
+`NotChecked` n'est pas `None` : « pas de verdict » ne doit jamais se lire « feu vert ». C'est
+aussi ce qui garde le bouton éteint pendant l'instant où une vérification est en vol.
 
 ### 3.3 Contrats de lecture
 
@@ -666,13 +729,20 @@ sous `%APPDATA%\Nagare\keys` et protégé par **DPAPI** (Windows d'abord — l'A
 
 | Page | Contenu | Messages consommés (via `IMediator`) |
 |---|---|---|
-| `DashboardPage` | sélection du fichier (`IVideoFilePicker` + validation ffprobe), choix profil, choix channel, **aperçu de la commande masquée**, Start/Stop, statut de session, stats et logs live | `ValidateMediaFileQuery`, `GetStreamProfilesQuery`, `GetChannelsQuery`, `BuildCommandPreviewQuery`, `StartStreamCommand`, `StopStreamCommand`, `ISessionMonitor` |
+| `DashboardPage` | sélection du fichier (`IVideoFilePicker` + validation ffprobe), choix profil, choix channel, **aperçu de la commande masquée**, Start/Stop, statut de session, stats et logs live | `ValidateMediaFileQuery`, `GetStreamProfilesQuery`, `GetChannelsQuery`, `GetFfmpegEnvironmentQuery`, `GetStartPreflightQuery`, `BuildCommandPreviewQuery`, `StartStreamCommand`, `StopStreamCommand`, `ISessionMonitor` |
 | `ProfilesPage` | CRUD profils d'encodage (vidéo/audio/entrée) | `GetStreamProfilesQuery`, `SaveStreamProfileCommand`, `DeleteStreamProfileCommand` |
 | `ChannelsPage` | CRUD channels ; clé en **`PasswordBox`**, **jamais réaffichée** (le DTO ne porte qu'un `bool KeyConfigured`) ; champ vide en édition = **clé inchangée** | `GetChannelsQuery`, `SaveChannelCommand`, `DeleteChannelCommand` |
 
-Au démarrage : `GetFfmpegEnvironmentQuery` → `InfoBar` **bloquante** si ffmpeg/ffprobe
-sont introuvables, ou si le profil sélectionné demande NVENC alors qu'il est
-indisponible. L'app reste utilisable (configuration des profils/channels) sans ffmpeg.
+Au démarrage : `GetFfmpegEnvironmentQuery` collecte l'état de la toolchain, puis
+`GetStartPreflightQuery` (§3.2) **décide** si un démarrage est possible et **pourquoi pas**.
+L'`InfoBar` bloquante affiche la traduction française de ce motif — ffmpeg/ffprobe
+introuvables, profil NVENC sur une machine sans NVENC. L'app reste utilisable
+(configuration des profils/channels) sans ffmpeg.
+
+**Aucune règle métier ne vit dans un ViewModel.** Le `DashboardViewModel` ne *décide* de
+rien : il demande le verdict à `GetStartPreflightQuery`, expose `CanStart` (= le verdict)
+et **traduit** `StartBlockReason` → phrase française. Le tableau motif → phrase est, lui,
+bien à sa place : le vocabulaire de l'utilisateur est une affaire d'UI.
 
 **Aucune validation métier n'est dupliquée dans l'UI.** Les invariants du domaine
 (E1–E8) lèvent une `DomainException` que le ViewModel attrape et affiche. Les

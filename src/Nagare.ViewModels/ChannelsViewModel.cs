@@ -6,7 +6,7 @@ using Nagare.Application.Channels;
 using Nagare.Domain.Channels;
 using Nagare.Domain.Common;
 
-namespace Nagare.Presentation.ViewModels;
+namespace Nagare.ViewModels;
 
 /// <summary>
 /// CRUD of the broadcast channels (plan §7, phase 4.1).

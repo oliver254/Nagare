@@ -8,10 +8,10 @@ using Nagare.Domain.Channels;
 using Nagare.Domain.Common;
 using Nagare.Domain.Profiles;
 using Nagare.Domain.Sessions;
-using Nagare.Presentation.ViewModels;
+using Nagare.ViewModels;
 using Nagare.UnitTests.Fakes;
 
-namespace Nagare.UnitTests.Presentation;
+namespace Nagare.UnitTests.ViewModels;
 
 /// <summary>
 /// The two non-negotiable rules of the real-time monitoring (plan §5) plus the environment gate.
@@ -181,20 +181,115 @@ public sealed class DashboardViewModelTests
         Assert.Equal(new[] { "older line", "last line" }, vm.Logs);
     }
 
+    // ------------------------------------------------------- preflight -> what is shown
+    //
+    // The RULE is tested in GetStartPreflightHandlerTests, at its own level. What follows tests the
+    // ViewModel's remaining job: obey the verdict (button) and translate it (sentence).
+
     [Fact]
-    public async Task Missing_ffmpeg_blocks_the_start()
+    public async Task Missing_ffmpeg_blocks_the_start_and_says_so_in_French()
     {
         var report = new FfmpegEnvironmentReport(
             FfmpegAvailable: false,
             FfprobeAvailable: false,
             FfmpegVersion: null,
             NvencAvailable: false,
-            Error: "ffmpeg introuvable.");
+            Error: "ffmpeg not found (configured path or PATH).");   // Infrastructure's words, in English
 
         var (vm, _, _, _, _) = await CreateLoadedAsync(environment: report);
 
-        Assert.Equal("ffmpeg introuvable.", vm.EnvironmentIssue);
         Assert.False(vm.StartCommand.CanExecute(null));
+
+        // The user reads French, and reads about ffmpeg — not the probe's raw English error, and not
+        // the name of a configuration key, which the ViewModel no longer knows.
+        Assert.NotNull(vm.EnvironmentIssue);
+        Assert.Contains("ffmpeg", vm.EnvironmentIssue);
+        Assert.Contains("introuvable", vm.EnvironmentIssue);
+        Assert.DoesNotContain("Nagare:Ffmpeg", vm.EnvironmentIssue);
+    }
+
+    [Fact]
+    public async Task Missing_ffprobe_blocks_the_start()
+    {
+        var report = new FfmpegEnvironmentReport(
+            FfmpegAvailable: true,
+            FfprobeAvailable: false,
+            FfmpegVersion: "7.1",
+            NvencAvailable: true,
+            Error: null);
+
+        var (vm, _, _, _, _) = await CreateLoadedAsync(environment: report);
+
+        Assert.False(vm.StartCommand.CanExecute(null));
+        Assert.NotNull(vm.EnvironmentIssue);
+        Assert.Contains("ffprobe", vm.EnvironmentIssue);
+    }
+
+    /// <summary>A file ffprobe cannot read blocks the start, and is named as such next to the file.</summary>
+    [Fact]
+    public async Task An_unreadable_file_blocks_the_start()
+    {
+        var broken = new MediaValidationResult(
+            Exists: true, Readable: false, Duration: null, Width: null, Height: null, Fps: null,
+            VideoCodec: null, AudioCodec: null, Error: null);
+
+        var (vm, _, _, _, _) = await CreateLoadedAsync(media: broken);
+
+        vm.SelectedProfile = vm.Profiles.Single();
+        vm.SelectedChannel = vm.Channels.Single();
+        await vm.PickFileCommand.ExecuteAsync(null);
+
+        Assert.False(vm.StartCommand.CanExecute(null));
+        Assert.Equal("Fichier illisible par ffprobe.", vm.MediaError);
+        Assert.Null(vm.MediaSummary);        // nothing to summarize about a file that would not open
+        Assert.Null(vm.CommandPreview);      // and nothing to preview
+    }
+
+    [Fact]
+    public async Task A_missing_file_blocks_the_start()
+    {
+        var missing = new MediaValidationResult(
+            Exists: false, Readable: false, Duration: null, Width: null, Height: null, Fps: null,
+            VideoCodec: null, AudioCodec: null, Error: "File not found.");
+
+        var (vm, _, _, _, _) = await CreateLoadedAsync(media: missing);
+
+        vm.SelectedProfile = vm.Profiles.Single();
+        vm.SelectedChannel = vm.Channels.Single();
+        await vm.PickFileCommand.ExecuteAsync(null);
+
+        Assert.False(vm.StartCommand.CanExecute(null));
+        Assert.Equal("Fichier introuvable.", vm.MediaError);
+    }
+
+    /// <summary>
+    /// A running session holds the single slot (SPEC §5). The button goes off — and, deliberately,
+    /// NO error is shouted: the status line already says a broadcast is on air.
+    /// </summary>
+    [Fact]
+    public async Task A_running_session_blocks_a_second_start_without_shouting()
+    {
+        var (vm, _, monitor, _, _) = await CreateLoadedAsync();
+
+        vm.SelectedProfile = vm.Profiles.Single();
+        vm.SelectedChannel = vm.Channels.Single();
+        await vm.PickFileCommand.ExecuteAsync(null);
+
+        Assert.True(vm.StartCommand.CanExecute(null));
+
+        monitor.Current = Snapshot(SessionStatus.Running, fps: 30);
+        monitor.RaiseChanged(monitor.Current);
+
+        Assert.False(vm.StartCommand.CanExecute(null));
+        Assert.True(vm.StopCommand.CanExecute(null));
+        Assert.Null(vm.EnvironmentIssue);
+        Assert.Null(vm.MediaError);
+
+        // The session ends: the slot is free again, and the button comes back on its own.
+        monitor.Current = Snapshot(SessionStatus.Stopped);
+        monitor.RaiseChanged(monitor.Current);
+
+        Assert.True(vm.StartCommand.CanExecute(null));
     }
 
     [Fact]
@@ -315,9 +410,14 @@ public sealed class DashboardViewModelTests
         FakeUiDispatcher Dispatcher,
         FakeMediator Mediator);
 
+    private static readonly MediaValidationResult ValidMedia = new(
+        Exists: true, Readable: true, Duration: TimeSpan.FromMinutes(3),
+        Width: 1920, Height: 1080, Fps: 30, VideoCodec: "h264", AudioCodec: "aac", Error: null);
+
     private static async Task<Fixture> CreateLoadedAsync(
         FakeSessionMonitor? monitor = null,
-        FfmpegEnvironmentReport? environment = null)
+        FfmpegEnvironmentReport? environment = null,
+        MediaValidationResult? media = null)
     {
         monitor ??= new FakeSessionMonitor();
         var time = new FakeTimeProvider();
@@ -326,13 +426,18 @@ public sealed class DashboardViewModelTests
         IReadOnlyList<StreamProfileDto> profiles = [TestProfile];
         IReadOnlyList<ChannelDto> channels = [TestChannel];
 
+        // The preflight is answered by the REAL Application handler, not by a canned verdict. The
+        // rule is tested on its own (GetStartPreflightHandlerTests); what these tests must prove is
+        // that the ViewModel asks it, obeys it, and translates it — so the thing they talk to has to
+        // be the thing that decides.
+        var preflight = new GetStartPreflightHandler(monitor);
+
         var mediator = new FakeMediator()
             .Answer<GetFfmpegEnvironmentQuery>(environment ?? HealthyEnvironment)
             .Answer<GetStreamProfilesQuery>(profiles)
             .Answer<GetChannelsQuery>(channels)
-            .Answer<ValidateMediaFileQuery>(new MediaValidationResult(
-                Exists: true, Readable: true, Duration: TimeSpan.FromMinutes(3),
-                Width: 1920, Height: 1080, Fps: 30, VideoCodec: "h264", AudioCodec: "aac", Error: null))
+            .Answer<ValidateMediaFileQuery>(media ?? ValidMedia)
+            .Answer<GetStartPreflightQuery>(query => preflight.Handle(query).GetAwaiter().GetResult())
             .Answer<BuildCommandPreviewQuery>(MaskedCommandLine)
             .Answer<StartStreamCommand>(TestSession);
 

@@ -9,17 +9,23 @@ using Nagare.Application.Media;
 using Nagare.Application.Profiles;
 using Nagare.Application.Streaming;
 using Nagare.Domain.Common;
-using Nagare.Domain.Profiles;
 using Nagare.Domain.Sessions;
-using Nagare.Presentation.Abstractions;
+using Nagare.ViewModels.Abstractions;
 
-namespace Nagare.Presentation.ViewModels;
+namespace Nagare.ViewModels;
 
 /// <summary>
 /// The broadcast page: choose file / profile / channel, preview the ffmpeg command (key masked —
 /// SPEC §4), start, stop, and watch the session live (plan §5).
 ///
-/// THREADING — the whole point of this class. <see cref="ISessionMonitor"/> raises
+/// NO RULE LIVES HERE. Whether a broadcast may start is decided by
+/// <see cref="GetStartPreflightQuery"/> in the Application layer, which answers a structured
+/// <see cref="StartBlockReason"/>. This class does two things with it: it exposes
+/// <c>CanStart</c>, and it TRANSLATES the reason into the French sentence shown on screen. The
+/// wording is a UI concern; the rule is not — and it used to sit right here, in French, quoting an
+/// ffmpeg configuration key by name.
+///
+/// THREADING — the other half of this class. <see cref="ISessionMonitor"/> raises
 /// <c>Changed</c> from the coordinator's mailbox loop and <c>LogAppended</c> from the ffmpeg stderr
 /// reader thread. NOTHING in here touches an observable property outside
 /// <see cref="IUiDispatcher.Post"/>, and the two flows are damped before they reach the UI:
@@ -54,7 +60,15 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
     /// <summary>0/1 via Interlocked: is a drain callback already on its way to the UI thread?</summary>
     private int _logDrainScheduled;
 
+    /// <summary>
+    /// The two EXPENSIVE facts the preflight decides on, gathered once each and cached here: the
+    /// environment costs three process launches, the media report one. They are inputs to the rule,
+    /// not the rule — see <see cref="GetStartPreflightQuery"/>.
+    /// </summary>
     private FfmpegEnvironmentReport? _environment;
+
+    private MediaValidationResult? _media;
+
     private bool _subscribed;
 
     // Throttle state. Touched ONLY from OnSessionChanged, which the coordinator calls from its
@@ -85,33 +99,41 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
     // ------------------------------------------------------------------ selection
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(StartCommand))]
     private StreamProfileDto? _selectedProfile;
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(StartCommand))]
     private ChannelDto? _selectedChannel;
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(StartCommand))]
     private string? _inputFilePath;
 
     /// <summary>ffprobe report of the chosen file: duration, resolution, codecs.</summary>
     [ObservableProperty]
     private string? _mediaSummary;
 
+    /// <summary>Translation of a media <see cref="StartBlockReason"/>. Null = the file is fine, or none is chosen.</summary>
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(StartCommand))]
     private string? _mediaError;
 
     /// <summary>Generated ffmpeg command line, KEY MASKED (SPEC §4). Comes from the domain, never rebuilt here.</summary>
     [ObservableProperty]
     private string? _commandPreview;
 
-    /// <summary>Blocking issue (ffmpeg missing, NVENC required but absent). Null = nothing blocks.</summary>
+    /// <summary>
+    /// Translation of an environment <see cref="StartBlockReason"/> (ffmpeg/ffprobe missing, NVENC
+    /// required but absent). Null = nothing of the sort blocks. A displayed sentence, never a rule.
+    /// </summary>
+    [ObservableProperty]
+    private string? _environmentIssue;
+
+    /// <summary>
+    /// The verdict, and the ONLY thing <see cref="CanStart"/> reads. It starts at
+    /// <see cref="StartPreflight.NotChecked"/> — no verdict means no start, which is also what keeps
+    /// the button off during the instant a fresh check is in flight.
+    /// </summary>
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StartCommand))]
-    private string? _environmentIssue;
+    private StartPreflight _preflight = StartPreflight.NotChecked;
 
     // --------------------------------------------------------------- live session
 
@@ -159,7 +181,7 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
     {
         _environment = await _mediator.SendAsync<GetFfmpegEnvironmentQuery, FfmpegEnvironmentReport>(
             new GetFfmpegEnvironmentQuery());
-        RefreshEnvironmentIssue();
+        await RefreshPreflightAsync();
 
         var profiles = await _mediator.SendAsync<GetStreamProfilesQuery, IReadOnlyList<StreamProfileDto>>(
             new GetStreamProfilesQuery());
@@ -187,7 +209,10 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
             return;   // cancelled
 
         InputFilePath = path;
-        await ValidateFileAsync();
+        _media = null;                  // the previous file's report says nothing about this one
+
+        await ValidateFileAsync();      // fills _media and the summary
+        await RefreshPreflightAsync();  // the verdict on that report — and with it, MediaError
         await RefreshPreviewAsync();
     });
 
@@ -205,13 +230,8 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
     [RelayCommand(CanExecute = nameof(CanStop))]
     private Task StopAsync() => RunGuardedAsync(() => _mediator.DispatchAsync(new StopStreamCommand()));
 
-    private bool CanStart()
-        => !IsSessionActive
-           && EnvironmentIssue is null
-           && SelectedProfile is not null
-           && SelectedChannel is not null
-           && !string.IsNullOrWhiteSpace(InputFilePath)
-           && MediaError is null;
+    /// <summary>The verdict, and nothing else. The rule that produced it lives in Application.</summary>
+    private bool CanStart() => Preflight.CanStart;
 
     private bool CanStop() => IsSessionActive;
 
@@ -219,11 +239,25 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
 
     partial void OnSelectedProfileChanged(StreamProfileDto? value)
     {
-        RefreshEnvironmentIssue();   // an NVENC profile on a machine without NVENC blocks the start
+        QueuePreflightRefresh();   // an NVENC profile on a machine without NVENC blocks the start
         QueuePreviewRefresh();
     }
 
-    partial void OnSelectedChannelChanged(ChannelDto? value) => QueuePreviewRefresh();
+    partial void OnSelectedChannelChanged(ChannelDto? value)
+    {
+        QueuePreflightRefresh();
+        QueuePreviewRefresh();
+    }
+
+    /// <summary>A session that starts or stops flips the verdict: the slot is taken, or freed.</summary>
+    partial void OnIsSessionActiveChanged(bool value) => QueuePreflightRefresh();
+
+    /// <summary>The sentences shown on screen follow the verdict — they are its translation.</summary>
+    partial void OnPreflightChanged(StartPreflight value)
+    {
+        EnvironmentIssue = EnvironmentMessage(value.Reason);
+        MediaError = MediaMessage(value.Reason);
+    }
 
     /// <summary>
     /// Fire-and-forget refresh triggered by a selection change. Safe: the body cannot throw — it is
@@ -231,21 +265,58 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
     /// </summary>
     private void QueuePreviewRefresh() => _ = RefreshPreviewAsync();
 
+    /// <summary>
+    /// Same, for the verdict — with one twist: the old verdict is dropped FIRST. It was formed on a
+    /// selection that no longer exists, and leaving it in place would keep the Start button lit for
+    /// the instant the query takes to answer — long enough to click it.
+    /// </summary>
+    private void QueuePreflightRefresh()
+    {
+        Preflight = StartPreflight.NotChecked;
+        _ = RefreshPreflightAsync();
+    }
+
+    /// <summary>
+    /// Asks Application whether a start is allowed. Every fact it decides on is passed in: the two
+    /// costly reports are cached here (gathering them on each keystroke would spawn four processes),
+    /// the live session state it reads for itself. Caching is plumbing; deciding is the rule.
+    /// </summary>
+    private async Task RefreshPreflightAsync()
+    {
+        try
+        {
+            Preflight = await _mediator.SendAsync<GetStartPreflightQuery, StartPreflight>(
+                new GetStartPreflightQuery(_environment, SelectedProfile, SelectedChannel, InputFilePath, _media));
+        }
+        catch (Exception ex)
+        {
+            // No verdict = no start. Failing open here would offer a button that cannot work.
+            Preflight = StartPreflight.NotChecked;
+            ErrorMessage = ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// Runs ffprobe on the chosen file and keeps the report. It does NOT judge it: whether an
+    /// unreadable file blocks the start is the preflight's call, and <see cref="MediaError"/> is
+    /// that call's translation.
+    /// </summary>
     private async Task ValidateFileAsync()
     {
-        var result = await _mediator.SendAsync<ValidateMediaFileQuery, MediaValidationResult>(
+        _media = await _mediator.SendAsync<ValidateMediaFileQuery, MediaValidationResult>(
             new ValidateMediaFileQuery(InputFilePath!));
 
-        if (!result.Exists || !result.Readable || result.Error is not null)
-        {
-            MediaError = result.Error
-                ?? (result.Exists ? "Fichier illisible par ffprobe." : "Fichier introuvable.");
-            MediaSummary = null;
-            return;
-        }
+        MediaSummary = Summarize(_media);
+    }
 
-        MediaError = null;
-        MediaSummary = string.Join(" · ", new[]
+    /// <summary>
+    /// Duration · resolution · fps · codecs, as far as ffprobe got. A file it could not decode has
+    /// none of them, and the summary comes out empty — no need to restate the rule to know there is
+    /// nothing to show.
+    /// </summary>
+    private static string? Summarize(MediaValidationResult result)
+    {
+        var summary = string.Join(" · ", new[]
         {
             result.Duration is { } duration ? duration.ToString(@"hh\:mm\:ss") : null,
             result.Width is { } width && result.Height is { } height ? $"{width}×{height}" : null,
@@ -253,6 +324,8 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
             result.VideoCodec,
             result.AudioCodec
         }.Where(part => !string.IsNullOrWhiteSpace(part)));
+
+        return string.IsNullOrEmpty(summary) ? null : summary;
     }
 
     /// <summary>
@@ -279,36 +352,40 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private void RefreshEnvironmentIssue()
+    // --------------------------------------------------------- reason -> French sentence
+
+    /// <summary>
+    /// The toolchain reasons, as shown in the environment InfoBar. Everything else returns null:
+    /// "you have not picked a profile yet" is not an error to shout about — the disabled button says
+    /// it already.
+    ///
+    /// <para>No configuration key is named here. Which key carries the ffmpeg path is Infrastructure's
+    /// business, it changes with the configuration schema, and a ViewModel that quotes it is a
+    /// ViewModel that lies the day it moves.</para>
+    /// </summary>
+    private static string? EnvironmentMessage(StartBlockReason reason) => reason switch
     {
-        if (_environment is null)
-        {
-            EnvironmentIssue = null;
-            return;
-        }
+        StartBlockReason.FfmpegMissing =>
+            "ffmpeg est introuvable. Renseignez son chemin dans la configuration de l'application, "
+            + "ou ajoutez ffmpeg au PATH.",
 
-        if (!_environment.FfmpegAvailable)
-        {
-            EnvironmentIssue = _environment.Error
-                ?? "ffmpeg est introuvable. Renseignez « Nagare:Ffmpeg:ExecutablePath » ou ajoutez ffmpeg au PATH.";
-            return;
-        }
+        StartBlockReason.FfprobeMissing =>
+            "ffprobe est introuvable : la validation des fichiers vidéo est impossible.",
 
-        if (!_environment.FfprobeAvailable)
-        {
-            EnvironmentIssue = "ffprobe est introuvable : la validation des fichiers vidéo est impossible.";
-            return;
-        }
+        StartBlockReason.NvencUnavailable =>
+            "Le profil sélectionné exige NVENC, indisponible sur cette machine. "
+            + "Choisissez un profil libx264.",
 
-        if (SelectedProfile is { Video.Codec: VideoCodec.H264Nvenc or VideoCodec.HevcNvenc } && !_environment.NvencAvailable)
-        {
-            EnvironmentIssue = "Le profil sélectionné exige NVENC, indisponible sur cette machine. "
-                + "Choisissez un profil libx264.";
-            return;
-        }
+        _ => null
+    };
 
-        EnvironmentIssue = null;
-    }
+    /// <summary>The reasons that concern the chosen file, shown next to it.</summary>
+    private static string? MediaMessage(StartBlockReason reason) => reason switch
+    {
+        StartBlockReason.InputFileNotFound => "Fichier introuvable.",
+        StartBlockReason.InputFileUnreadable => "Fichier illisible par ffprobe.",
+        _ => null
+    };
 
     // ------------------------------------------------------- real time (phase 5)
 
@@ -356,7 +433,11 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
     {
         Status = snapshot.Status;
         StatusLabel = LabelOf(snapshot.Status);
-        IsSessionActive = snapshot.Status is SessionStatus.Starting or SessionStatus.Running or SessionStatus.Reconnecting;
+
+        // "Active" is the domain's word, not ours (SessionStatusExtensions): the coordinator refuses
+        // a second start on that very predicate. Restating it here as "Starting or Running or
+        // Reconnecting" was a second definition of the same rule, free to drift.
+        IsSessionActive = snapshot.Status.IsActive();
         ReconnectAttempts = snapshot.ReconnectAttempts;
         LastError = snapshot.LastError;
         IsHealthWarning = snapshot.Health == HealthIndicator.Warning;

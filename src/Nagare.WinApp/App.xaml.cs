@@ -7,8 +7,8 @@ using Microsoft.UI.Xaml;
 using Monbsoft.BrilliantMediator.Extensions;
 using Nagare.Application;
 using Nagare.Infrastructure;
-using Nagare.Presentation;
-using Nagare.Presentation.Abstractions;
+using Nagare.ViewModels;
+using Nagare.ViewModels.Abstractions;
 using Nagare.WinApp.Services;
 
 namespace Nagare.WinApp;
@@ -70,7 +70,7 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         builder.Services.AddNagareApplication();
         builder.Services.AddNagareInfrastructure(builder.Configuration);
-        builder.Services.AddNagarePresentation();
+        builder.Services.AddNagareViewModels();
 
         // UI-thread-bound services: the WinUI implementations of the two ports the ViewModels need.
         // Both go through MainWindowContext, because the container is built BEFORE the window exists

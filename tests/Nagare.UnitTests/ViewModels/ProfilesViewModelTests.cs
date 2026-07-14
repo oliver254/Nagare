@@ -1,10 +1,10 @@
 using Nagare.Application.Profiles;
 using Nagare.Domain.Common;
 using Nagare.Domain.Profiles;
-using Nagare.Presentation.ViewModels;
+using Nagare.ViewModels;
 using Nagare.UnitTests.Fakes;
 
-namespace Nagare.UnitTests.Presentation;
+namespace Nagare.UnitTests.ViewModels;
 
 /// <summary>
 /// The profile editor must NOT restate the encoding rules: it builds the value objects and lets the

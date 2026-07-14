@@ -6,7 +6,7 @@ using Nagare.Application.Profiles;
 using Nagare.Domain.Common;
 using Nagare.Domain.Profiles;
 
-namespace Nagare.Presentation.ViewModels;
+namespace Nagare.ViewModels;
 
 /// <summary>
 /// CRUD of the encoding profiles (plan §7, phase 4.2).

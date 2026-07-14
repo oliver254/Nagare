@@ -1,4 +1,4 @@
-namespace Nagare.Presentation.Abstractions;
+namespace Nagare.ViewModels.Abstractions;
 
 /// <summary>
 /// Picks the video file to broadcast. Implemented in the WinUI layer over <c>FileOpenPicker</c>,

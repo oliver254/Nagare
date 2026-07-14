@@ -20,9 +20,10 @@
     <ProjectReference Include="..\..\src\Nagare.Domain\Nagare.Domain.csproj" />
     <ProjectReference Include="..\..\src\Nagare.Application\Nagare.Application.csproj" />
     <ProjectReference Include="..\..\src\Nagare.Infrastructure\Nagare.Infrastructure.csproj" />
-    <!-- Les ViewModels : net10.0, sans WinUI, donc testables ici (Nagare.WinApp, lui, cible un TFM
-         Windows et serait irréférençable depuis ce projet). -->
-    <ProjectReference Include="..\..\src\Nagare.Presentation\Nagare.Presentation.csproj" />
+    <!-- Les ViewModels : net10.0, sans WinUI, donc référençables ici (Nagare.WinApp, lui, cible un
+         TFM Windows et serait irréférençable depuis ce projet). C'est une CONSÉQUENCE de la
+         séparation des couches, pas sa raison d'être — cf. ARCHITECTURE.md §1. -->
+    <ProjectReference Include="..\..\src\Nagare.ViewModels\Nagare.ViewModels.csproj" />
   </ItemGroup>
 
 </Project>

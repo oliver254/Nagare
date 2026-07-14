@@ -9,6 +9,21 @@ public enum VideoCodec
     Libx264      // -> libx264
 }
 
+public static class VideoCodecExtensions
+{
+    /// <summary>
+    /// True when the codec is an NVIDIA hardware encoder, and therefore CANNOT run on a machine
+    /// whose ffmpeg does not expose NVENC (<c>FfmpegEnvironmentReport.NvencAvailable</c>).
+    ///
+    /// The single source of truth for "this codec needs the GPU encoder": the start preflight
+    /// blocks on it, the command builder emits <c>-rc</c> on it (an NVENC-only flag), and the preset
+    /// families below split on it. Three copies of the same list of codecs, one enum value away from
+    /// silently disagreeing.
+    /// </summary>
+    public static bool RequiresNvenc(this VideoCodec codec)
+        => codec is VideoCodec.H264Nvenc or VideoCodec.HevcNvenc;
+}
+
 public enum RateControl { Cbr, Vbr }
 
 public readonly record struct Resolution(int Width, int Height);
@@ -49,7 +64,7 @@ public sealed record EncodingSettings
     /// ComboBox would be a duplicate of a domain rule, free to drift away from it.
     /// </summary>
     public static IReadOnlyList<string> PresetsFor(VideoCodec codec)
-        => codec == VideoCodec.Libx264 ? Libx264Presets : NvencPresets;
+        => codec.RequiresNvenc() ? NvencPresets : Libx264Presets;
 
     public EncodingSettings(
         VideoCodec codec,

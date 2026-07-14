@@ -1,4 +1,4 @@
-namespace Nagare.Presentation.Abstractions;
+namespace Nagare.ViewModels.Abstractions;
 
 /// <summary>
 /// Marshals work onto the UI thread. Implemented over <c>DispatcherQueue.TryEnqueue</c> in the

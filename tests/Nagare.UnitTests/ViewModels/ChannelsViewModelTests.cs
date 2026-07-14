@@ -3,10 +3,10 @@ using System.Reflection;
 using Nagare.Application.Channels;
 using Nagare.Domain.Channels;
 using Nagare.Domain.Common;
-using Nagare.Presentation.ViewModels;
+using Nagare.ViewModels;
 using Nagare.UnitTests.Fakes;
 
-namespace Nagare.UnitTests.Presentation;
+namespace Nagare.UnitTests.ViewModels;
 
 /// <summary>
 /// The stream key contract (ADR-0005, plan §6): a saved key is NEVER read back, and an empty field
