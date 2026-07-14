@@ -566,6 +566,96 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Current_AfterAReconnection_JudgesHealthOnTheNewProcessAlone()
+    {
+        // HealthOf compares dropped-frame counters between two samples. The relaunched ffmpeg
+        // restarts its counters at ZERO: keeping the dead process's figures would make a real burst
+        // of drops read as an improvement — a Warning silently downgraded to Ok.
+        var runner = await StartRunningAsync();
+        await EmitAndWaitAsync(runner, Stats(speed: 1.0, droppedFrames: 900));   // the corpse dropped a lot
+
+        runner.EmitExit(1);
+        await WaitForArmedBackoffAsync(attempts: 1);
+        _time.Advance(TimeSpan.FromSeconds(2));
+        await WaitForStatusAsync(SessionStatus.Reconnecting);
+
+        // The relaunched process drops from its VERY FIRST sample — the dangerous case. Comparing
+        // its 30 to the corpse's 900 reads "fewer drops than before" and reports a healthy stream
+        // while frames are being lost. Only a cleared baseline sees 30 > 0 for what it is.
+        //
+        // A first sample at 0 drops would have masked the bug: it resets the baseline on its own,
+        // and the test would pass either way. It did — that flaw was caught by mutating the fix out.
+        var relaunched = await WaitForRunnerAsync(2);
+        await EmitAndWaitAsync(relaunched, Stats(speed: 1.0, droppedFrames: 30));
+
+        Assert.Equal(HealthIndicator.Warning, _coordinator.Current!.Health);
+    }
+
+    // ------------------------------------------------------------ resilience to the UI
+
+    [Fact]
+    public async Task Changed_WhenASubscriberThrows_DoesNotTakeTheLiveSessionDown()
+    {
+        // Subscribers run ON the mailbox loop thread. A WinUI view model throwing while marshalling
+        // to the dispatcher must NEVER kill a live broadcast: a broken UI is not a reason to drop
+        // the stream. Without isolation the exception bubbles into the loop's catch and fails it.
+        var runner = await StartRunningAsync();
+
+        _coordinator.Changed += _ => throw new InvalidOperationException("the view model blew up");
+
+        await EmitAndWaitAsync(runner, Stats(speed: 1.0));
+
+        Assert.Equal(SessionStatus.Running, _coordinator.Current!.Status);
+        Assert.True(_coordinator.HasActiveSession);
+
+        // And the session is still alive enough to be stopped normally.
+        await _coordinator.StopAsync(CancellationToken.None).WaitAsync(Budget);
+        Assert.Equal(SessionStatus.Stopped, _coordinator.Current!.Status);
+    }
+
+    [Fact]
+    public async Task LogAppended_WhenASubscriberThrows_DoesNotTakeTheLiveSessionDown()
+    {
+        var runner = await StartRunningAsync();
+
+        _coordinator.LogAppended += _ => throw new InvalidOperationException("the log view blew up");
+
+        runner.EmitOutputLine("frame=  120 fps= 30");
+        await EmitAndWaitAsync(runner, Stats(speed: 1.0));
+
+        Assert.Equal(SessionStatus.Running, _coordinator.Current!.Status);
+        Assert.True(_coordinator.HasActiveSession);
+    }
+
+    // ----------------------------------------------------------------- key never leaks
+
+    [Fact]
+    public async Task ReconnectDue_WhenTheFailureQuotesTheDestination_ScrubsTheKeyFromTheReason()
+    {
+        // ffmpeg echoes the full destination URL — stream key included — in its error messages.
+        // The failure reason lands in LastError and SessionFailed, both shown in the UI. It MUST be
+        // scrubbed. Today no reachable exception carries the arguments, so the invariant held by
+        // LUCK; this test turns luck into a guarantee.
+        _runners.Configure = (runner, launchNumber) =>
+        {
+            if (launchNumber == 2)
+                runner.StartFailure = new InvalidOperationException(
+                    $"ffmpeg refused the destination {FakeFfmpegCommandBuilder.Destination}");
+        };
+
+        var runner = await StartRunningAsync();
+        runner.EmitExit(1);
+        await WaitForArmedBackoffAsync(attempts: 1);
+
+        _time.Advance(TimeSpan.FromSeconds(2));
+        await WaitForStatusAsync(SessionStatus.Failed);
+
+        var reason = _coordinator.Current!.LastError!;
+        Assert.DoesNotContain(FakeFfmpegCommandBuilder.StreamKey, reason, StringComparison.Ordinal);
+        Assert.Contains(ProtectedStreamKey.Mask, reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task RecentLogs_AfterOutputLines_ReturnsThemInOrderAndRaisesLogAppended()
     {
         var runner = await StartRunningAsync();
@@ -608,6 +698,13 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
 
     private Task WaitForStatusAsync(SessionStatus status)
         => WaitUntilAsync(() => _coordinator.Current?.Status == status, $"the session to reach {status}");
+
+    /// <summary>Waits until the Nth runner has been created, then hands it over.</summary>
+    private async Task<FakeFfmpegProcessRunner> WaitForRunnerAsync(int launchNumber)
+    {
+        await WaitUntilAsync(() => _runners.CreateCount >= launchNumber, $"runner #{launchNumber} to be created");
+        return _runners.Runner(launchNumber);
+    }
 
     private Task WaitForAttemptAsync(SessionStatus status, int attempts)
         => WaitUntilAsync(
