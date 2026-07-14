@@ -10,7 +10,7 @@ avec un contrôle fin de l'encodage et un monitoring temps réel.
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
 [![C#](https://img.shields.io/badge/C%23-14-239120)](https://learn.microsoft.com/dotnet/csharp/)
 [![Tests](https://img.shields.io/badge/tests-164%20✓-success)](tests/)
-[![Licence](https://img.shields.io/badge/licence-AGPL--3.0-blue)](LICENSE)
+[![Licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
 </div>
 
@@ -190,4 +190,9 @@ incrément ; `main` reste toujours verte ; toute décision structurante donne li
 
 ## Licence
 
-[GNU AGPL v3](LICENSE).
+[MIT](LICENSE).
+
+> Nagare **invoque** ffmpeg comme un process séparé et ne se lie pas aux bibliothèques
+> `libav*` : la licence de ffmpeg ne se propage pas au projet. Assurez-vous simplement
+> que le binaire ffmpeg que **vous** distribuez ou utilisez respecte sa propre licence
+> (GPL ou LGPL selon le build).
