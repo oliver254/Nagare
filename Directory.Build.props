@@ -6,6 +6,16 @@
     <LangVersion>14</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+
+    <!--
+      La Definition of Done (CONTRIBUTING.md) exige « 0 erreur, 0 avertissement ».
+      Sans ceci, c'est une intention que rien n'empêche de régresser : on la rend
+      mécanique. Inclut les avertissements d'audit NuGet (NU19xx) — une dépendance
+      vulnérable DOIT casser le build (la clé de stream est en jeu), pas produire
+      un avertissement que personne ne lit. Cf. la faille critique DataProtection
+      10.0.0 corrigée en début de projet.
+    -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
 </Project>
