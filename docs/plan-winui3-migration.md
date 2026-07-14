@@ -150,6 +150,19 @@ Ces tests portent sur Domain/Infrastructure : ils sont **insensibles** au pivot 
 - `MainWindow` + `NavigationView`.
 - **Critère de sortie** : F5 → la fenêtre s'ouvre, aucun navigateur.
 
+> ⚠️ **Piège de configuration à ne pas rater.** En quittant `Microsoft.NET.Sdk.Web`, on perd
+> le chargement **implicite** des `appsettings.json` *et* des **User Secrets**. Le nouveau
+> host doit donc, explicitement :
+> - référencer `Microsoft.Extensions.Hosting`, `Microsoft.Extensions.Configuration.Json` et
+>   **`Microsoft.Extensions.Configuration.UserSecrets`** (non inclus dans le SDK classique) ;
+> - appeler `AddJsonFile("appsettings.json")` et `AddUserSecrets<App>(optional: true)`
+>   (`UserSecretsId = nagare-winapp-local`) ;
+> - copier `appsettings.json` dans le dossier de sortie.
+>
+> Sans ça, `FfmpegOptions.ExecutablePath` retombe **silencieusement** sur `"ffmpeg"` résolu
+> depuis le `PATH` — où il n'est **pas** sur cette machine. Le symptôme serait un « ffmpeg
+> introuvable » incompréhensible alors que le binaire est bien installé.
+
 ### Phase 4 — Vues & ViewModels
 
 1. **Channels** : CRUD, clé en `PasswordBox` (jamais réaffichée).

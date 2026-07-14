@@ -2,6 +2,8 @@
 
   <PropertyGroup>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <!-- Config machine-locale (chemins ffmpeg, clé de test) hors du dépôt : User Secrets. -->
+    <UserSecretsId>nagare-winapp-local</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
