@@ -174,16 +174,6 @@ public sealed class StreamSessionTests
     public void MarkFailed_FromRunning_ThrowsDomainException()
         => Assert.Throws<DomainException>(() => Running().MarkFailed("boom"));
 
-    [Fact]
-    public void BeginReconnect_FromReconnecting_ThrowsDomainException()
-    {
-        // Current guard: BeginReconnect is only accepted from Running. A relaunch that fails
-        // before producing stats therefore cannot count a second attempt from Reconnecting.
-        var session = Reconnecting();
-
-        Assert.Throws<DomainException>(() => session.BeginReconnect("relaunch failed"));
-    }
-
     [Theory]
     [InlineData(Operation.MarkRunning)]
     [InlineData(Operation.BeginReconnect)]
@@ -217,6 +207,80 @@ public sealed class StreamSessionTests
         Assert.Equal(SessionStatus.Reconnecting, session.Status);
         Assert.Equal(1, session.ReconnectAttempts);
         Assert.Equal(1, SingleEvent<ReconnectStarted>(session).Attempt);
+    }
+
+    [Fact]
+    public void BeginReconnect_FromReconnecting_CountsAnotherAttemptAndStaysReconnecting()
+    {
+        // A relaunch that dies before producing stats must count a further attempt.
+        // The coordinator relies on this (StreamSessionCoordinator, case Reconnecting).
+        var session = Reconnecting();               // already at attempt 1
+
+        session.BeginReconnect("relaunch failed");
+
+        Assert.Equal(SessionStatus.Reconnecting, session.Status);
+        Assert.Equal(2, session.ReconnectAttempts);
+        Assert.Equal(2, SingleEvent<ReconnectStarted>(session).Attempt);
+    }
+
+    [Fact]
+    public void BeginReconnect_SuccessiveFailedRelaunches_GrowTheBackoffDelay()
+    {
+        // Policy: 3 attempts, 2s initial, factor 2 => 2s, 4s, 8s.
+        var session = Running();
+
+        var delays = new List<TimeSpan>();
+        for (var i = 0; i < Policy.MaxAttempts; i++)
+        {
+            session.ClearDomainEvents();
+            session.BeginReconnect($"drop {i}");
+            delays.Add(SingleEvent<ReconnectStarted>(session).NextDelay);
+        }
+
+        Assert.Equal(SessionStatus.Reconnecting, session.Status);
+        Assert.Equal(Policy.MaxAttempts, session.ReconnectAttempts);
+        Assert.Equal(
+            [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(8)],
+            delays);
+    }
+
+    [Fact]
+    public void BeginReconnect_WhenAttemptsAreExhausted_TransitionsToFailed()
+    {
+        // This branch used to be unreachable: the counter never exceeded 1, so a session
+        // could stay Reconnecting forever instead of giving up.
+        var session = Running();
+
+        for (var i = 0; i < Policy.MaxAttempts; i++)
+            session.BeginReconnect($"drop {i}");
+
+        Assert.Equal(SessionStatus.Reconnecting, session.Status);
+
+        session.ClearDomainEvents();
+        session.BeginReconnect("the last relaunch failed too");
+
+        Assert.Equal(SessionStatus.Failed, session.Status);
+        Assert.Equal("the last relaunch failed too", session.LastError);
+        Assert.Equal("the last relaunch failed too", SingleEvent<SessionFailed>(session).Reason);
+    }
+
+    [Fact]
+    public void MarkRunning_MidEpisode_RestoresTheFullAttemptBudget()
+    {
+        var session = Running();
+
+        session.BeginReconnect("drop 1");
+        session.BeginReconnect("relaunch failed");   // attempt 2 of 3
+        session.MarkRunning();                       // recovered
+
+        Assert.Equal(0, session.ReconnectAttempts);
+
+        // A brand new episode may again consume the whole budget without failing.
+        for (var i = 0; i < Policy.MaxAttempts; i++)
+            session.BeginReconnect($"new drop {i}");
+
+        Assert.Equal(SessionStatus.Reconnecting, session.Status);
+        Assert.Equal(Policy.MaxAttempts, session.ReconnectAttempts);
     }
 
     // ------------------------------------------------------------ event accumulation
