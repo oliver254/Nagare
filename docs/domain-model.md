@@ -153,6 +153,7 @@ stateDiagram-v2
     Starting --> Stopped : stop utilisateur / SessionStopped
     Running --> Reconnecting : chute du flux / ReconnectStarted
     Running --> Stopped : stop utilisateur / SessionStopped
+    Reconnecting --> Reconnecting : relance échouée, tentative n+1 / ReconnectStarted
     Reconnecting --> Running : redémarrage OK / SessionRecovered
     Reconnecting --> Failed : tentatives épuisées / SessionFailed
     Reconnecting --> Stopped : stop utilisateur / SessionStopped
@@ -163,6 +164,18 @@ stateDiagram-v2
 Règle assumée : un échec en `Starting` va directement en `Failed` (pas de
 backoff — la config est probablement fautive). La reconnexion automatique avec
 backoff est réservée aux chutes d'un flux **déjà établi** (`Running`).
+
+**L'auto-transition `Reconnecting → Reconnecting`** est le cœur du backoff : une
+relance ffmpeg qui meurt avant d'émettre des stats compte une tentative de plus
+(délai `ReconnectPolicy.DelayFor(n)`, exponentiel plafonné). Quand les tentatives
+sont épuisées, la session part en `Failed`. Une reconnexion **réussie**
+(`MarkRunning`) remet `ReconnectAttempts` à 0 : le budget complet est restauré
+pour un futur incident.
+
+> Cette transition manquait au modèle initial, et le garde de `BeginReconnect`
+> refusait `Reconnecting` — la branche d'épuisement était donc **inatteignable**
+> (aucun backoff progressif, aucun échec après N tentatives). Bug révélé par les
+> tests et corrigé (commit `41856d9`).
 
 ## Événements de domaine
 

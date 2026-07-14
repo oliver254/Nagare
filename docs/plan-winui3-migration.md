@@ -150,6 +150,19 @@ Ces tests portent sur Domain/Infrastructure : ils sont **insensibles** au pivot 
 - `MainWindow` + `NavigationView`.
 - **Critère de sortie** : F5 → la fenêtre s'ouvre, aucun navigateur.
 
+> ⚠️ **Piège de configuration à ne pas rater.** En quittant `Microsoft.NET.Sdk.Web`, on perd
+> le chargement **implicite** des `appsettings.json` *et* des **User Secrets**. Le nouveau
+> host doit donc, explicitement :
+> - référencer `Microsoft.Extensions.Hosting`, `Microsoft.Extensions.Configuration.Json` et
+>   **`Microsoft.Extensions.Configuration.UserSecrets`** (non inclus dans le SDK classique) ;
+> - appeler `AddJsonFile("appsettings.json")` et `AddUserSecrets<App>(optional: true)`
+>   (`UserSecretsId = nagare-winapp-local`) ;
+> - copier `appsettings.json` dans le dossier de sortie.
+>
+> Sans ça, `FfmpegOptions.ExecutablePath` retombe **silencieusement** sur `"ffmpeg"` résolu
+> depuis le `PATH` — où il n'est **pas** sur cette machine. Le symptôme serait un « ffmpeg
+> introuvable » incompréhensible alors que le binaire est bien installé.
+
 ### Phase 4 — Vues & ViewModels
 
 1. **Channels** : CRUD, clé en `PasswordBox` (jamais réaffichée).
@@ -167,9 +180,14 @@ lignes, throttle stats 1/s, `ListView` virtualisée, badge de statut
 
 ### Phase 6 — Vérification
 
-`dotnet build` + `dotnet test` verts, exécution manuelle réelle (nécessite
-ffmpeg/ffprobe installés — **absents du PATH aujourd'hui**), puis audit
-`reviewer` (Clean Arch, DDD, CQRS, non-fuite de la clé).
+`dotnet build` + `dotnet test` verts, puis audit `reviewer` (Clean Arch, DDD,
+CQRS, non-fuite de la clé).
+
+**Vérification bout-en-bout réelle — possible** : ffmpeg/ffprobe sont installés
+(`C:\Users\oliver254\app\ffmpeg\bin\`, hors PATH) et NVENC est disponible
+(RTX 5070 Ti). La commande de la spec a déjà été validée contre le vrai ffmpeg
+(exit 0, débit conforme au CBR). Une vraie diffusion est donc testable — ce que
+l'on croyait impossible tant qu'on pensait ffmpeg absent.
 
 ## 8. Risques
 
@@ -178,7 +196,7 @@ ffmpeg/ffprobe installés — **absents du PATH aujourd'hui**), puis audit
 | ~~R1~~ | ~~Pas de template WinUI 3 ⇒ csproj manuel~~ | ✅ **Levé** : spike validé (build vert + fenêtre native). Config exacte en §7 phase 0. Repli WPF écarté. |
 | R2 | `FileOpenPicker` en non-empaqueté exige l'interop HWND WinRT | Connu, documenté, ~5 lignes |
 | R3 | UI figée par le débit de logs ffmpeg | Ring buffer borné + throttle (§5) — non négociables |
-| R4 | ffmpeg/ffprobe absents du PATH | Sans impact sur build/tests ; bloque seulement l'exécution réelle |
+| ~~R4~~ | ~~ffmpeg/ffprobe absents du PATH~~ | ✅ **Levé** : ffmpeg/ffprobe **sont installés** (`C:\Users\oliver254\app\ffmpeg\bin\`, hors PATH) ; NVENC dispo (RTX 5070 Ti). Chemin câblé dans `appsettings.Development.json`. La commande de la spec a été **validée contre le vrai ffmpeg** (exit 0). La vérification bout-en-bout est donc **possible**. |
 
 ## 9. Ce qui ne change pas
 

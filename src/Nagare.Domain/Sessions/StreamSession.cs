@@ -80,13 +80,15 @@ public sealed class StreamSession : AggregateRoot
     }
 
     /// <summary>
-    /// Running -> Reconnecting when a drop is detected. Increments the attempt counter;
-    /// if the attempts are exhausted, goes to Failed (emits <see cref="SessionFailed"/>)
-    /// instead of Reconnecting (emits <see cref="ReconnectStarted"/>).
+    /// Running|Reconnecting -> Reconnecting. From Running a drop was detected; from
+    /// Reconnecting a relaunch died before producing stats, so a further attempt is counted.
+    /// Increments the attempt counter; once the attempts are exhausted, goes to Failed
+    /// (emits <see cref="SessionFailed"/>) instead of Reconnecting (emits <see cref="ReconnectStarted"/>).
+    /// A successful recovery (<see cref="MarkRunning"/>) restores the whole attempt budget.
     /// </summary>
     public void BeginReconnect(string reason)
     {
-        if (Status != SessionStatus.Running)
+        if (Status is not (SessionStatus.Running or SessionStatus.Reconnecting))
             throw InvalidTransition(nameof(BeginReconnect));
 
         var attempt = ReconnectAttempts + 1;
