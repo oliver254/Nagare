@@ -81,19 +81,43 @@ Sans ces deux garde-fous, l'UI **gèle** sous le débit de ffmpeg :
 
 ## 7. Plan d'exécution
 
-### Phase 0 — Spike de faisabilité WinUI 3 **(bloquant)**
+### Phase 0 — Spike de faisabilité WinUI 3 — ✅ **VALIDÉE (2026-07-06)**
 
 Aucun template WinUI 3 n'est installé sur la machine (`dotnet new` ne propose
-que MAUI / WinForms / WPF). Un projet WinUI 3 reste un csproj classique
-(`<UseWinUI>true</UseWinUI>` + `Microsoft.WindowsAppSDK`), écrit à la main.
+que MAUI / WinForms / WPF) : le csproj a été **écrit à la main**.
 
-- **Critère de sortie** : `dotnet build` vert **et** une fenêtre vide s'ouvre.
-- **Si échec** : installer le workload Visual Studio « Développement
-  d'applications Windows ».
-- **Si échec persistant** : **repli WPF** (template présent, thème Fluent type
-  WPF-UI). L'architecture MVVM, les ViewModels et tout le reste du plan sont
-  **identiques** — seul le dialecte XAML change. Le repli ne coûte que le look
-  Fluent natif.
+**Résultat : `dotnet build` vert (0 erreur, 0 avertissement), l'exécutable se
+lance et une vraie fenêtre native s'ouvre** (titre remonté par Windows). Le
+repli WPF est **écarté**, le workload VS supplémentaire est **inutile**.
+
+**Configuration validée — à reprendre telle quelle pour `Nagare.WinApp` :**
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
+  </ItemGroup>
+</Project>
+```
+
+Fichiers requis : `app.manifest` (avec `dpiAwareness = PerMonitorV2`),
+`App.xaml(.cs)` (dictionnaire `XamlControlsResources`, `OnLaunched` qui active la
+fenêtre) et `MainWindow.xaml(.cs)`. Le point d'entrée `Main` est **généré** par
+le SDK — ne pas l'écrire.
+
+`WindowsAppSDKSelfContained=true` est important : il évite d'exiger
+l'installation séparée du runtime Windows App SDK sur la machine cible.
 
 ### Phase 1 — Combler le trou des tests *(indépendante du pivot, parallélisable)*
 
@@ -151,7 +175,7 @@ ffmpeg/ffprobe installés — **absents du PATH aujourd'hui**), puis audit
 
 | # | Risque | Parade |
 |---|---|---|
-| R1 | Pas de template WinUI 3 ⇒ csproj manuel | Phase 0 (spike) ; repli WPF documenté |
+| ~~R1~~ | ~~Pas de template WinUI 3 ⇒ csproj manuel~~ | ✅ **Levé** : spike validé (build vert + fenêtre native). Config exacte en §7 phase 0. Repli WPF écarté. |
 | R2 | `FileOpenPicker` en non-empaqueté exige l'interop HWND WinRT | Connu, documenté, ~5 lignes |
 | R3 | UI figée par le débit de logs ffmpeg | Ring buffer borné + throttle (§5) — non négociables |
 | R4 | ffmpeg/ffprobe absents du PATH | Sans impact sur build/tests ; bloque seulement l'exécution réelle |
