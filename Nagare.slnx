@@ -1,23 +1,41 @@
 <Solution>
   <!--
-    Plateforme déclarée EXPLICITEMENT. Sans ce bloc, Visual Studio devait deviner les
-    configurations de la solution : il proposait « Any CPU », que Nagare.WinApp n'expose pas
-    (WinUI 3 exige une plateforme concrète), et refusait alors de charger la solution.
-    La ligne de commande ne le voyait pas — elle construit chaque projet isolément, sans
-    passer par le mapping de configurations. Tous les projets sont en x64
-    (Directory.Build.props) : cette solution produit une application Windows 64 bits.
+    Configurations générées par l'outillage Microsoft (`dotnet sln migrate`), pas écrites à la main.
+
+    L'élément qui compte est le `<Platform Project="x64" />` de CHAQUE projet : il indique vers quelle
+    configuration du projet pointe une plateforme de la solution. Sans lui, Visual Studio réclamait
+    une configuration que les projets n'exposent pas et refusait de charger la solution — alors que
+    `dotnet build` réussissait, car il construit chaque projet isolément, sans passer par ce mapping.
+
+    Tous les projets sont en x64 (Directory.Build.props) : WinUI 3 n'accepte pas « Any CPU », et cette
+    solution produit une application Windows 64 bits. Les plateformes Any CPU / x86 restent proposées
+    par la solution mais retombent toutes sur le x64 des projets.
   -->
   <Configurations>
+    <Platform Name="Any CPU" />
     <Platform Name="x64" />
+    <Platform Name="x86" />
   </Configurations>
   <Folder Name="/src/">
-    <Project Path="src/Nagare.Application/Nagare.Application.csproj" />
-    <Project Path="src/Nagare.Domain/Nagare.Domain.csproj" />
-    <Project Path="src/Nagare.Infrastructure/Nagare.Infrastructure.csproj" />
-    <Project Path="src/Nagare.ViewModels/Nagare.ViewModels.csproj" />
-    <Project Path="src/Nagare.WinApp/Nagare.WinApp.csproj" />
+    <Project Path="src/Nagare.Domain/Nagare.Domain.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/Nagare.Application/Nagare.Application.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/Nagare.Infrastructure/Nagare.Infrastructure.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/Nagare.ViewModels/Nagare.ViewModels.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/Nagare.WinApp/Nagare.WinApp.csproj">
+      <Platform Project="x64" />
+    </Project>
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/Nagare.UnitTests/Nagare.UnitTests.csproj" />
+    <Project Path="tests/Nagare.UnitTests/Nagare.UnitTests.csproj">
+      <Platform Project="x64" />
+    </Project>
   </Folder>
 </Solution>
