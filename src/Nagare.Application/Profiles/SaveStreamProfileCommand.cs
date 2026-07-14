@@ -1,3 +1,4 @@
+using Monbsoft.BrilliantMediator.Abstractions.Commands;
 using Nagare.Application.Abstractions;
 using Nagare.Domain.Common;
 using Nagare.Domain.Profiles;
@@ -10,12 +11,12 @@ public sealed record SaveStreamProfileCommand(
     string Name,
     EncodingSettings Video,
     AudioSettings Audio,
-    InputOptions Input);
+    InputOptions Input) : ICommand<ProfileId>;
 
 public sealed class SaveStreamProfileHandler(IStreamProfileRepository repository)
     : ICommandHandler<SaveStreamProfileCommand, ProfileId>
 {
-    public async Task<ProfileId> HandleAsync(SaveStreamProfileCommand command, CancellationToken ct)
+    public async Task<ProfileId> Handle(SaveStreamProfileCommand command, CancellationToken ct = default)
     {
         StreamProfile profile;
 

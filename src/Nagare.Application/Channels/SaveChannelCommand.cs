@@ -1,3 +1,4 @@
+using Monbsoft.BrilliantMediator.Abstractions.Commands;
 using Nagare.Application.Abstractions;
 using Nagare.Domain.Channels;
 using Nagare.Domain.Common;
@@ -14,14 +15,14 @@ public sealed record SaveChannelCommand(
     string Name,
     Platform Platform,
     string BaseUrl,
-    string? PlaintextKey);
+    string? PlaintextKey) : ICommand<ChannelId>;
 
 public sealed class SaveChannelHandler(
     IChannelRepository repository,
     IStreamKeyProtector keyProtector)
     : ICommandHandler<SaveChannelCommand, ChannelId>
 {
-    public async Task<ChannelId> HandleAsync(SaveChannelCommand command, CancellationToken ct)
+    public async Task<ChannelId> Handle(SaveChannelCommand command, CancellationToken ct = default)
     {
         Channel channel;
 

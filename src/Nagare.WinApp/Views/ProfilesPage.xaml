@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Nagare.WinApp.Views.ProfilesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    mc:Ignorable="d"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+
+    <StackPanel Margin="24" Spacing="8">
+        <TextBlock Text="Profils" Style="{StaticResource TitleTextBlockStyle}" />
+        <TextBlock Text="CRUD des profils d'encodage : phase 4."
+                   Style="{StaticResource BodyTextBlockStyle}" />
+    </StackPanel>
+
+</Page>

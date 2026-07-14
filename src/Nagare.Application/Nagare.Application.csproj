@@ -1,16 +1,47 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <!-- CS8669 : le code émis par BrilliantMediator.SourceGenerator 3.0.0 utilise l'annotation
+         « ? » (GetSessionStatusQuery répond SessionSnapshot?) sans émettre de directive
+         « #nullable enable » — ce que le compilateur exige d'un fichier auto-généré, même quand le
+         projet active le contexte nullable. Le diagnostic ne peut, par construction, viser que du
+         code généré : nos fichiers écrits à la main n'y sont pas éligibles. Suppression ciblée, à
+         retirer quand le générateur émettra la directive (défaut signalé à la lib). -->
+    <NoWarn>$(NoWarn);CS8669</NoWarn>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Nagare.Domain\Nagare.Domain.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Abstractions uniquement : DI explicite (ADR-0003), IHostedService (cycle de vie du coordinateur),
+    <!-- Abstractions uniquement : DI (ADR-0007), IHostedService (cycle de vie du coordinateur),
          Options (ReconnectSettings) et logging (drainage des événements de domaine). -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- CQRS (ADR-0007) : dépendance sur des interfaces de messagerie (ICommand/IQuery), pas sur
+         de l'infrastructure. Le générateur scanne l'assembly qui le référence : il DOIT donc vivre
+         ici, là où sont les handlers ; il produit AddGeneratedHandlers() dans le namespace
+         Nagare.Application, consommé par AddNagareApplication(). -->
+    <PackageReference Include="BrilliantMediator" Version="3.0.0" />
+
+    <!-- Le paquet 3.0.0 publie le générateur dans lib/netstandard2.0/ au lieu de
+         analyzers/dotnet/cs/ : Roslyn ne le charge donc PAS tout seul, et OutputItemType="Analyzer"
+         (valable pour un ProjectReference) n'y change rien. On récupère la DLL au chemin restauré et
+         on la déclare nous-mêmes comme analyseur. ExcludeAssets=all empêche par ailleurs la DLL
+         netstandard2.0 d'être référencée comme bibliothèque à l'exécution.
+         À retirer dès que le paquet sera correctement empaqueté (défaut signalé à la lib). -->
+    <PackageReference Include="BrilliantMediator.SourceGenerator" Version="3.0.0"
+                      PrivateAssets="all" ExcludeAssets="all" GeneratePathProperty="true" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Analyzer Include="$(PkgBrilliantMediator_SourceGenerator)\lib\netstandard2.0\BrilliantMediator.SourceGenerator.dll" />
   </ItemGroup>
 
   <ItemGroup>

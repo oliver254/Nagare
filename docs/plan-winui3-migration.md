@@ -132,23 +132,45 @@ l'installation séparée du runtime Windows App SDK sur la machine cible.
 
 Ces tests portent sur Domain/Infrastructure : ils sont **insensibles** au pivot UI.
 
-### Phase 2 — Application → BrilliantMediator
+### Phase 2 — Application → BrilliantMediator — ✅ **VALIDÉE (2026-07-14)**
 
 - Commands/queries implémentent `ICommand<T>` / `IQuery<T>`.
 - Handlers : `HandleAsync(…)` → `Handle(…)`.
 - Suppression de `Abstractions/Handlers.cs`.
 - `AddBrilliantMediator().AddGeneratedHandlers().Build()` + `UseBrilliantMediator()`.
-- **Critère de sortie** : build vert, tests de Phase 1 toujours verts.
+- **Critère de sortie** : build vert, 192 tests toujours verts. ✅ Les 13 handlers sont
+  enregistrés par le générateur (exactement ceux câblés à la main auparavant).
 
-### Phase 3 — `Nagare.WinApp` en WinUI 3
+> ⚠️ **Deux défauts d'empaquetage de `BrilliantMediator.SourceGenerator` 3.0.0**, contournés dans
+> `Nagare.Application.csproj` — à retirer dès qu'une version corrigée sort :
+> 1. Le paquet publie la DLL du générateur dans `lib/netstandard2.0/` au lieu de
+>    `analyzers/dotnet/cs/` : **Roslyn ne la charge donc pas**, et `OutputItemType="Analyzer"`
+>    (valable pour un `ProjectReference`, pas pour un `PackageReference`) n'y change rien. Sans
+>    contournement, `AddGeneratedHandlers()` n'existe simplement pas → erreur CS1061. Contournement :
+>    `GeneratePathProperty="true"` + `<Analyzer Include="$(PkgBrilliantMediator_SourceGenerator)\…" />`,
+>    avec `ExcludeAssets="all"` pour ne pas référencer une DLL netstandard2.0 à l'exécution.
+> 2. Le code généré emploie l'annotation `?` (`GetSessionStatusQuery` répond `SessionSnapshot?`)
+>    **sans émettre `#nullable enable`**, ce que le compilateur exige d'un fichier auto-généré →
+>    CS8669, fatal ici (`TreatWarningsAsErrors`). Contournement : `NoWarn` ciblé sur CS8669, qui ne
+>    peut par construction viser que du code généré.
+
+### Phase 3 — `Nagare.WinApp` en WinUI 3 — ✅ **VALIDÉE (2026-07-14)**
 
 - Suppression de `Components/`, de MudBlazor, de l'hébergement ASP.NET
   (`Microsoft.NET.Sdk.Web` → `Microsoft.NET.Sdk`).
 - Nouveau csproj (TFM Windows, `UseWinUI`, `WindowsPackageType=None`).
 - `App.xaml.cs` : Host builder, `AddNagareApplication()`, `AddNagareInfrastructure()`,
   BrilliantMediator, ouverture de `MainWindow`.
-- `MainWindow` + `NavigationView`.
-- **Critère de sortie** : F5 → la fenêtre s'ouvre, aucun navigateur.
+- `MainWindow` + `NavigationView` → 3 pages placeholder (Dashboard / Profiles / Channels).
+- **Critère de sortie** : F5 → la fenêtre s'ouvre, aucun navigateur. ✅ Constaté réellement :
+  l'exécutable se lance, le process vit, `MainWindowTitle = "Nagare"`.
+
+> **Arrêt propre de ffmpeg — le piège du thread UI.** La fermeture de la fenêtre ne peut PAS
+> bloquer sur `host.StopAsync()` (`GetAwaiter().GetResult()`) : le coordinateur attend sa boucle
+> mailbox sans `ConfigureAwait(false)`, sa continuation est donc postée sur le thread UI — que
+> l'on vient de bloquer. **Interblocage, et ffmpeg survit à la fermeture** (violation de la SPEC §5).
+> Parade retenue : `AppWindow.Closing` → `args.Cancel = true`, arrêt asynchrone de l'hôte, puis
+> `Close()` réel. La boucle de messages reste vivante, donc l'arrêt aboutit.
 
 > ⚠️ **Piège de configuration à ne pas rater.** En quittant `Microsoft.NET.Sdk.Web`, on perd
 > le chargement **implicite** des `appsettings.json` *et* des **User Secrets**. Le nouveau
