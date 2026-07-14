@@ -65,26 +65,22 @@ monitoring temps réel.
 
 ---
 
-## Addendum environnement (constaté le 2026-07-06)
-- Machine de dev : Windows 11 Pro. SDKs installés : **10.0.301** (et 10.0.100-rc.1).
-  **Aucun SDK ni runtime .NET 9** → la spec disait ".NET 9" mais ce serait non
-  exécutable ici. **Cible retenue : `net10.0` / C# 14** (LTS, successeur direct,
-  aucune API de la spec impactée). À documenter en ADR.
-- ffmpeg/ffprobe : **présents**, mais **hors du PATH** →
-  `C:\Users\oliver254\app\ffmpeg\bin\` (build gyan.dev du 2026-01-05).
-  Chemin câblé dans `appsettings.Development.json` (section `Nagare:Ffmpeg`) ;
-  laisser vide sur une autre machine pour résoudre depuis le PATH.
-  Le chemin configurable prévu par la spec est donc bien nécessaire.
-- **NVENC disponible** : `h264_nvenc`, `hevc_nvenc`, `av1_nvenc` et `libx264` sont tous
-  présents ; GPU **GeForce RTX 5070 Ti** (driver 610.47). Toute la chaîne d'encodage
-  visée par la spec est opérationnelle.
-- **La commande exacte de la spec a été validée contre le vrai ffmpeg** (2026-07-06) :
-  `-re -stream_loop -1 -i in.mp4 -c:v h264_nvenc -preset p2 -rc cbr -b:v 3000k
-  -maxrate 3000k -bufsize 3000k -g 60 -keyint_min 60 -c:a aac -b:a 128k -ar 48000
-  -f flv …` → exit code 0, NVENC encode, débit conforme au CBR 3000k demandé.
-  (Le *golden test* prouve la conformité de la **chaîne** à la spec ; ceci prouve que
-  **ffmpeg l'accepte** — les deux sont nécessaires, aucun ne remplace l'autre.)
-- Le dépôt n'est pas encore un dépôt git.
+## Addendum — décisions et constats
+
+- **Cible retenue : `net10.0` / C# 14** au lieu du `.NET 9` mentionné plus haut
+  (LTS, successeur direct, aucune API de la spec impactée). Voir ADR-0001.
+- **ffmpeg/ffprobe** : résolus depuis le `PATH`, ou via un chemin configuré dans la
+  section `Nagare:Ffmpeg`. Le chemin configurable prévu par la spec est nécessaire :
+  ffmpeg n'est pas systématiquement dans le `PATH`. La configuration machine-locale
+  passe par les **User Secrets**, jamais par le dépôt (voir `CONTRIBUTING.md`).
+- **La commande exacte de la spec a été validée contre un vrai ffmpeg** : exit code 0,
+  encodage NVENC effectif, débit conforme au CBR demandé.
+  Le *golden test* prouve la conformité de la **chaîne de caractères** à la spec ;
+  cette validation prouve que **ffmpeg l'accepte réellement**. Les deux sont
+  nécessaires, aucune ne remplace l'autre.
+- **Diffusion réelle non testée** : lancer un vrai stream exige une clé de diffusion
+  valide. Le chemin start/stop et le monitoring ne sont validés que par tests
+  unitaires — c'est le dernier écart entre « les tests sont verts » et « ça marche ».
 - Décisions utilisateur du 2026-07-06 (priment sur le texte ci-dessus) :
   le code est **intégralement en anglais** (identifiants, fichiers, enums) ;
   la couche présentation s'appelle **Nagare.WinApp** ; l'UI utilise **MudBlazor** ;
