@@ -21,13 +21,17 @@ namespace Nagare.Application.Streaming;
 /// <see cref="_lastStats"/> and <see cref="_health"/>, so the aggregate is never mutated
 /// concurrently.
 ///
-/// Two rules make it work:
+/// Three rules make it work:
 /// <list type="number">
 /// <item>The loop NEVER awaits the backoff. The delay is scheduled outside and reposts a
 /// <c>ReconnectDue</c> message, so a stop is processed immediately even mid-backoff (SPEC §5).</item>
 /// <item>Every runner runs under an increasing epoch. Its events carry that epoch, and the
 /// loop discards any message whose epoch is stale — a stats line flushed by a process that
 /// is already dead can no longer trigger a false recovery.</item>
+/// <item><see cref="StopAsync"/> cancels the session token BEFORE posting its message, and a
+/// <c>ReconnectDue</c> that sees that cancellation gives up. This is the one case the epoch cannot
+/// catch: a delay that elapses just before the stop is posted queues its message AHEAD of it, still
+/// under the current epoch, and would put ffmpeg back on air for the instant it takes to kill it.</item>
 /// </list>
 /// </summary>
 public sealed class StreamSessionCoordinator
@@ -35,6 +39,9 @@ public sealed class StreamSessionCoordinator
 {
     private const int LogCapacity = 1000;
     private static readonly TimeSpan GracePeriod = TimeSpan.FromSeconds(5);
+
+    /// <summary>How long <see cref="DisposeAsync"/> waits for the loop before closing without it.</summary>
+    private static readonly TimeSpan LoopShutdownTimeout = TimeSpan.FromSeconds(5);
 
     private readonly IStreamProfileRepository _profiles;
     private readonly IChannelRepository _channels;
@@ -63,8 +70,15 @@ public sealed class StreamSessionCoordinator
     private FfmpegCommand? _command;
     private FfmpegStats? _lastStats;
     private HealthIndicator _health = HealthIndicator.Ok;
-    private CancellationTokenSource? _sessionCts;
     private long _epoch;
+
+    /// <summary>
+    /// Assigned by the loop only, but CANCELLED from the caller thread too (see <see cref="StopAsync"/>).
+    /// A <see cref="CancellationTokenSource"/> is thread-safe and carries no domain state: signalling
+    /// it from outside leaves the loop the sole writer of the aggregate (ADR-0008). Volatile so the
+    /// caller thread sees the source of the session that is actually running.
+    /// </summary>
+    private volatile CancellationTokenSource? _sessionCts;
 
     public StreamSessionCoordinator(
         IStreamProfileRepository profiles,
@@ -125,6 +139,13 @@ public sealed class StreamSessionCoordinator
 
     public async Task StopAsync(CancellationToken ct)
     {
+        // Cancelled BEFORE the message is posted, and that order is the whole point. If the backoff
+        // delay expires just before this call, its ReconnectDue is ALREADY in the mailbox, ahead of
+        // the stop (FIFO): the loop would relaunch ffmpeg — a stream briefly back on air on Twitch —
+        // only to kill it milliseconds later. Cancelling first makes that queued message give up on
+        // its own (see HandleReconnectDueAsync).
+        CancelSessionDelays();
+
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         Post(new StopRequested(ct, completion));
 
@@ -136,6 +157,23 @@ public sealed class StreamSessionCoordinator
         // An unbounded writer only refuses once completed, i.e. after DisposeAsync.
         if (!_mailbox.Writer.TryWrite(message))
             throw new ObjectDisposedException(nameof(StreamSessionCoordinator), "The coordinator has been shut down.");
+    }
+
+    /// <summary>
+    /// Cancels the pending backoff of the current session. Callable from any thread. The source may
+    /// be disposed concurrently by the loop ending the session — in which case there is, by
+    /// definition, no delay left to cancel.
+    /// </summary>
+    private void CancelSessionDelays()
+    {
+        try
+        {
+            _sessionCts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The loop ended the session in between: its backoff died with it.
+        }
     }
 
     // ----------------------------------------------------------------- mailbox loop
@@ -240,7 +278,9 @@ public sealed class StreamSessionCoordinator
         try
         {
             // Barrier 1: cancels the pending backoff delay, so its ReconnectDue is never posted.
-            _sessionCts?.Cancel();
+            // Already done by StopAsync before posting (Cancel is idempotent); repeated here so a
+            // stop message alone carries the full contract, whoever posts it.
+            CancelSessionDelays();
 
             // Barrier 2: every message already in flight (including a ReconnectDue that just
             // won the race) becomes stale. No ffmpeg can be relaunched after a stop.
@@ -331,8 +371,12 @@ public sealed class StreamSessionCoordinator
 
                 if (session.Status is SessionStatus.Reconnecting)
                 {
-                    await CleanupRunnerAsync();
+                    // The backoff is armed BEFORE the dead process is reaped: killing it can block
+                    // for a while, and that time must not eat into the reconnection window. Nothing
+                    // can jump the gun — the loop is sequential, so the ReconnectDue it may post
+                    // meanwhile simply waits in the mailbox until this handler returns.
                     ScheduleReconnect(session);
+                    await CleanupRunnerAsync();
                 }
                 else
                 {
@@ -358,9 +402,25 @@ public sealed class StreamSessionCoordinator
         if (session is null || command is null || cts is null || session.Status is not SessionStatus.Reconnecting)
             return;
 
+        if (cts.IsCancellationRequested)
+        {
+            // Barrier 3. The epoch cannot catch this one: the delay expired just BEFORE the stop was
+            // posted, so this message is ahead of it in the FIFO and still carries the current epoch.
+            // A stop is on its way — putting ffmpeg back on air now, to kill it milliseconds later,
+            // is exactly the ghost broadcast we refuse.
+            _logger.LogInformation("Reconnection abandoned: a stop has been requested.");
+            return;
+        }
+
         try
         {
             await StartRunnerAsync(command, message.Epoch, cts.Token);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            // The stop landed while the runner was starting. Not a failure: the pending StopRequested
+            // owns the ending of this session, and disposes the half-started runner with it.
+            _logger.LogInformation("Reconnection interrupted by a stop request.");
         }
         catch (Exception ex)
         {
@@ -394,11 +454,15 @@ public sealed class StreamSessionCoordinator
             "Reconnection attempt {Attempt}/{MaxAttempts} scheduled in {Delay}.",
             session.ReconnectAttempts, session.Policy.MaxAttempts, delay);
 
+        // ExecuteSynchronously: the continuation only drops a message into an unbounded channel that
+        // never dispatches its reader inline (AllowSynchronousContinuations = false). Running it on
+        // the timer thread costs nothing, spares a thread-pool hop, and makes the post happen at a
+        // defined instant — the moment the delay elapses — instead of "some time after".
         _ = Task.Delay(delay, _time, cts.Token)
             .ContinueWith(
                 _ => _mailbox.Writer.TryWrite(new ReconnectDue(epoch)),
                 CancellationToken.None,
-                TaskContinuationOptions.OnlyOnRanToCompletion,
+                TaskContinuationOptions.OnlyOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
                 TaskScheduler.Default);
     }
 
@@ -488,29 +552,15 @@ public sealed class StreamSessionCoordinator
     /// <summary>
     /// Drives the aggregate to <see cref="SessionStatus.Failed"/> from wherever it is. A session
     /// left in a non-terminal state without a runner would be a zombie: nothing would ever move
-    /// it again.
+    /// it again. Reachable from Running only on a coordinator fault — the aggregate accepts it,
+    /// and <see cref="SessionFailed"/> then says exactly what happened.
     /// </summary>
     private void FailSession(StreamSession session, string reason)
     {
-        switch (session.Status)
-        {
-            case SessionStatus.Starting:
-            case SessionStatus.Reconnecting:
-                session.MarkFailed(reason);
-                break;
+        if (session.Status is SessionStatus.Stopped or SessionStatus.Failed)
+            return;   // already terminal
 
-            case SessionStatus.Running:
-                // The aggregate only allows Failed after Starting or Reconnecting: take the
-                // documented route rather than leaving a live session hanging.
-                session.BeginReconnect(reason);
-                if (session.Status is SessionStatus.Reconnecting)
-                    session.MarkFailed(reason);
-                break;
-
-            default:
-                return;   // already terminal
-        }
-
+        session.MarkFailed(reason);
         DrainEvents(session);
     }
 
@@ -606,14 +656,24 @@ public sealed class StreamSessionCoordinator
 
         try
         {
-            await _loop;
+            await _loop.WaitAsync(LoopShutdownTimeout, _time);
+        }
+        catch (TimeoutException)
+        {
+            // Safety belt, not an expected path: the loop ends by construction once the mailbox is
+            // completed. But SPEC §5 demands that ffmpeg be killed when the application closes, and
+            // a loop stuck on a hung handler would do the exact opposite — freeze the shutdown while
+            // ffmpeg keeps publishing. We give up waiting and kill it anyway; the cleanup below then
+            // races with a loop that should no longer exist, and that is the lesser evil.
+            _logger.LogWarning(
+                "The coordinator loop did not end within {Timeout}; shutting down anyway.",
+                LoopShutdownTimeout);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "The coordinator loop terminated unexpectedly.");
         }
 
-        // The loop is over: nothing else can touch the session state any more.
         await CleanupRunnerAsync();
 
         _sessionCts?.Dispose();

@@ -194,7 +194,7 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
         var runner = await StartRunningAsync();
 
         runner.EmitExit(1);
-        await WaitForAttemptAsync(SessionStatus.Reconnecting, attempts: 1);
+        await WaitForArmedBackoffAsync(attempts: 1);
 
         _time.Advance(TimeSpan.FromSeconds(2));
         await WaitUntilAsync(() => _runners.CreateCount == 2, "ffmpeg to be relaunched");
@@ -231,7 +231,7 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
         var runner = await StartRunningAsync();
 
         runner.EmitExit(1);
-        await WaitForAttemptAsync(SessionStatus.Reconnecting, attempts: 1);
+        await WaitForArmedBackoffAsync(attempts: 1);
 
         Assert.Equal(1, runner.DisposeCallCount);   // the dead runner is disposed before the relaunch
         Assert.Equal(1, _runners.CreateCount);      // and nothing is relaunched during the window
@@ -249,7 +249,7 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
         var runner = await StartRunningAsync();
 
         runner.EmitExit(1);
-        await WaitForAttemptAsync(SessionStatus.Reconnecting, attempts: 1);
+        await WaitForArmedBackoffAsync(attempts: 1);
 
         // Attempt 1 is due after 2s.
         _time.Advance(TimeSpan.FromMilliseconds(1900));
@@ -261,7 +261,7 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
 
         // The relaunched process dies before producing any stats: another attempt is counted.
         _runners.Runner(2).EmitExit(1);
-        await WaitForAttemptAsync(SessionStatus.Reconnecting, attempts: 2);
+        await WaitForArmedBackoffAsync(attempts: 2);
 
         // Attempt 2 is due after 4s, not 2s: a constant delay would relaunch inside this window.
         _time.Advance(TimeSpan.FromMilliseconds(3900));
@@ -281,7 +281,7 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
         // Budget of 3: attempts 1, 2 and 3 are relaunched, the 4th drop gives up.
         for (var attempt = 1; attempt <= Settings.MaxAttempts; attempt++)
         {
-            await WaitForAttemptAsync(SessionStatus.Reconnecting, attempt);
+            await WaitForArmedBackoffAsync(attempt);
 
             _time.Advance(Settings.ToPolicy().DelayFor(attempt));
             await WaitUntilAsync(() => _runners.CreateCount == attempt + 1, $"relaunch number {attempt}");
@@ -314,7 +314,7 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
 
         var runner = await StartRunningAsync();
         runner.EmitExit(1);
-        await WaitForAttemptAsync(SessionStatus.Reconnecting, attempts: 1);
+        await WaitForArmedBackoffAsync(attempts: 1);
 
         _time.Advance(TimeSpan.FromSeconds(2));
         await WaitForStatusAsync(SessionStatus.Failed);
@@ -330,7 +330,7 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
         var runner = await StartRunningAsync();
 
         runner.EmitExit(1);
-        await WaitForAttemptAsync(SessionStatus.Reconnecting, attempts: 1);
+        await WaitForArmedBackoffAsync(attempts: 1);
 
         // The stderr readers flush their buffer asynchronously: a progression line of the process
         // that just died lands now, through the handler they captured while it was alive. Its epoch
@@ -360,7 +360,7 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
 
         for (var attempt = 1; attempt <= Settings.MaxAttempts; attempt++)
         {
-            await WaitForAttemptAsync(SessionStatus.Reconnecting, attempt);
+            await WaitForArmedBackoffAsync(attempt);
 
             _time.Advance(Settings.ToPolicy().DelayFor(attempt));
             await WaitUntilAsync(() => _runners.CreateCount == attempt + 1, $"relaunch number {attempt}");
@@ -385,7 +385,7 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
         var runner = await StartRunningAsync();
 
         runner.EmitExit(1);
-        await WaitForAttemptAsync(SessionStatus.Reconnecting, attempts: 1);
+        await WaitForArmedBackoffAsync(attempts: 1);   // the backoff is really pending when the stop lands
 
         await _coordinator.StopAsync(CancellationToken.None).WaitAsync(Budget);
 
@@ -398,6 +398,36 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
 
         Assert.Equal(1, _runners.CreateCount);
         Assert.Equal(1, runner.DisposeCallCount);
+    }
+
+    [Fact]
+    public async Task StopAsync_WithAReconnectDueAlreadyQueued_RelaunchesNoFfmpeg()
+    {
+        // The one window the epoch cannot close: the backoff delay elapses JUST before the stop is
+        // posted, so its ReconnectDue sits AHEAD of the stop in the FIFO, still under the current
+        // epoch. The loop would relaunch ffmpeg — the stream reappears on Twitch — and kill it
+        // milliseconds later. StopAsync therefore cancels the session token BEFORE posting.
+        //
+        // Determinism: the loop is held inside the dispose of the dead runner, so it cannot consume
+        // the mailbox while the test arranges exactly the queue it wants — [ReconnectDue, Stop].
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var runner = await StartRunningAsync();
+        runner.DisposeBlocker = gate.Task;
+
+        runner.EmitExit(1);
+        await WaitForAttemptAsync(SessionStatus.Reconnecting, attempts: 1);
+        await runner.DisposeEntered.WaitAsync(Budget);   // backoff armed, and the loop is now held
+
+        _time.Advance(TimeSpan.FromSeconds(2));          // ReconnectDue is written to the mailbox now
+
+        var stop = _coordinator.StopAsync(CancellationToken.None);   // cancels, THEN posts behind it
+        gate.SetResult();                                            // the loop resumes: ReconnectDue first
+
+        await stop.WaitAsync(Budget);
+
+        Assert.Equal(1, _runners.CreateCount);   // the relaunch gave up: no ffmpeg was ever put back on air
+        Assert.Equal(SessionStatus.Stopped, _coordinator.Current!.Status);
+        Assert.False(_coordinator.HasActiveSession);
     }
 
     [Fact]
@@ -455,6 +485,36 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
         await _coordinator.DisposeAsync();
 
         Assert.Equal(1, runner.DisposeCallCount);   // the process is killed by the runner's dispose
+    }
+
+    [Fact]
+    public async Task DisposeAsync_WhenTheLoopIsStuck_GivesUpAfterTheTimeoutAndStillKillsFfmpeg()
+    {
+        // The loop always ends by construction — but "by construction" is an argument, not a
+        // guarantee. If a handler ever hung, an unbounded wait would freeze the shutdown of the app
+        // AND leave ffmpeg publishing, which is the exact opposite of what SPEC §5 demands. Here the
+        // runner never returns from StartAsync: the wait must give up and kill the process anyway.
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _runners.Configure = (runner, _) => runner.StartBlocker = gate.Task;
+
+        var start = StartAsync();   // never completes: the loop is stuck inside the runner
+        await WaitUntilAsync(() => _runners.CreateCount == 1, "ffmpeg to be launched");
+        await _runners.Runner(1).StartEntered.WaitAsync(Budget);
+
+        var dispose = _coordinator.DisposeAsync().AsTask();
+
+        try
+        {
+            // The 5s bound is counted on the coordinator's clock, so nothing is really awaited here.
+            await AdvanceUntilCompletedAsync(dispose, "the bounded shutdown to give up on the loop");
+        }
+        finally
+        {
+            gate.TrySetResult();   // release the loop whatever happened, so the teardown can end
+        }
+
+        Assert.Equal(1, _runners.Runner(1).DisposeCallCount);   // ffmpeg killed despite the stuck loop
+        await start.WaitAsync(Budget);                          // and the caller is never left hanging
     }
 
     // --------------------------------------------------------------- monitoring & health
@@ -548,6 +608,24 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
             $"the session to reach {status} at attempt {attempts}");
 
     /// <summary>
+    /// Waits for the reconnection episode to be entirely set up: the session at <paramref name="attempts"/>,
+    /// AND the loop done with the message that got it there.
+    ///
+    /// The second half is not a nicety, it is what makes every clock-driven test below deterministic.
+    /// The snapshot turns Reconnecting at the TOP of the exit handler; the backoff timer is armed a
+    /// few instructions later. A fake-clock timer registered AFTER an Advance counts its due time
+    /// from the NEW now — the advance is simply lost, the timer never fires, and the relaunch never
+    /// comes. Without this barrier the suite failed roughly once in eight runs, on whichever test
+    /// lost the race. The mailbox is FIFO with a single reader, so a probe message processed here
+    /// proves the exit handler ran to completion, timer included.
+    /// </summary>
+    private async Task WaitForArmedBackoffAsync(int attempts)
+    {
+        await WaitForAttemptAsync(SessionStatus.Reconnecting, attempts);
+        await FlushAsync();
+    }
+
+    /// <summary>
     /// Polls the mailbox loop until it has produced the expected effect. The real delay here only
     /// paces the polling — the coordinator's backoff runs on the fake clock and never elapses on
     /// its own, so no test ever waits for a backoff window.
@@ -563,6 +641,28 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
 
             await Task.Delay(5);
         }
+    }
+
+    /// <summary>
+    /// Pushes the FAKE clock forward until the task completes. The timeout being waited on is armed
+    /// on another thread, so a single Advance could land before the timer exists and be lost: the
+    /// clock is nudged until it fires. The real deadline only makes a broken bound fail the test
+    /// instead of hanging it — no test ever waits 5 real seconds.
+    /// </summary>
+    private async Task AdvanceUntilCompletedAsync(Task task, string expectation)
+    {
+        var deadline = DateTime.UtcNow + Budget;
+
+        while (!task.IsCompleted)
+        {
+            if (DateTime.UtcNow > deadline)
+                Assert.Fail($"Timed out after {Budget.TotalSeconds:0}s waiting for {expectation}.");
+
+            _time.Advance(TimeSpan.FromSeconds(6));   // past the coordinator's 5s shutdown bound
+            await Task.Delay(5);
+        }
+
+        await task;
     }
 
     /// <summary>

@@ -130,8 +130,25 @@ hypothèse de timing : une ligne de stats d'un process mort porte forcément une
 2. Incrémenter `_epoch` → tout message déjà en vol est périmé et sera ignoré.
 3. Arrêter/tuer le runner, `session.Stop()`, drainer les événements, nettoyer.
 
-**Aucun ffmpeg ne peut être relancé après un `Stop`** : deux barrières
-indépendantes (annulation + époque) l'en empêchent.
+**Aucun ffmpeg ne peut être relancé après un `Stop`** : **trois** barrières
+indépendantes l'en empêchent.
+
+> **Mise à jour (implémentation)** : les deux barrières ci-dessus laissaient une
+> fenêtre FIFO — si le délai expirait *juste avant* le `Stop`, le `ReconnectDue`
+> était déjà dans la file et traité en premier (ffmpeg relancé puis tué aussitôt).
+> Fermée par deux compléments :
+> - `StopAsync` annule `_sessionCts` **avant même de poster** `StopRequested`
+>   (depuis le thread appelant) ;
+> - le traitement de `ReconnectDue` **vérifie `IsCancellationRequested`** et
+>   abandonne la relance si l'annulation est demandée.
+>
+> Nuance assumée sur « la boucle est le seul écrivain » : cela reste vrai pour
+> **l'agrégat et l'état de session** (`_session`, `_runner`, `_command`,
+> `_lastStats`) ; le `_sessionCts`, lui, est annulé depuis le thread appelant —
+> c'est précisément le rôle d'un `CancellationTokenSource`, conçu et thread-safe
+> pour signaler entre threads. Aucun état du domaine n'est muté hors boucle.
+> Ce n'est **pas** le « flag partagé » écarté plus bas : un flag maison aurait dû
+> inventer sa propre sémantique de visibilité ; le CTS l'apporte nativement.
 
 ### Échec de démarrage d'une relance (défaut b)
 

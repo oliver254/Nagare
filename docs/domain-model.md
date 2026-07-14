@@ -153,6 +153,7 @@ stateDiagram-v2
     Starting --> Stopped : stop utilisateur / SessionStopped
     Running --> Reconnecting : chute du flux / ReconnectStarted
     Running --> Stopped : stop utilisateur / SessionStopped
+    Running --> Failed : faute interne / abandon explicite / SessionFailed
     Reconnecting --> Reconnecting : relance échouée, tentative n+1 / ReconnectStarted
     Reconnecting --> Running : redémarrage OK / SessionRecovered
     Reconnecting --> Failed : tentatives épuisées / SessionFailed
@@ -164,6 +165,14 @@ stateDiagram-v2
 Règle assumée : un échec en `Starting` va directement en `Failed` (pas de
 backoff — la config est probablement fautive). La reconnexion automatique avec
 backoff est réservée aux chutes d'un flux **déjà établi** (`Running`).
+
+`Running → Failed` (`MarkFailed`) est l'**abandon explicite** : une faute interne
+prive la session de tout ce qui pourrait la faire avancer (plus de process, plus
+de timer) — sans cette transition, elle resterait un **zombie** en `Running`. Elle
+ne court-circuite **pas** la règle ci-dessus : une sortie de ffmpeg passe toujours
+par `BeginReconnect` et consomme une tentative. Elle a été ouverte parce que
+l'atteindre via `BeginReconnect` émettait un `ReconnectStarted` **mensonger** dans
+la piste d'audit de la session.
 
 **L'auto-transition `Reconnecting → Reconnecting`** est le cœur du backoff : une
 relance ffmpeg qui meurt avant d'émettre des stats compte une tentative de plus

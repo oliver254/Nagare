@@ -7,11 +7,31 @@ namespace Nagare.UnitTests.Fakes;
 /// decides when the process emits stats, log lines or exits. <see cref="StartFailure"/> makes
 /// <see cref="StartAsync"/> throw, reproducing the Win32Exception that
 /// <c>Process.Start()</c> raises when the ffmpeg binary is missing or locked.
+///
+/// <see cref="StartBlocker"/> and <see cref="DisposeBlocker"/> hold the coordinator's loop inside
+/// this runner for as long as the test wants. That is what makes the two race tests deterministic:
+/// a held loop cannot consume the mailbox, so the test can decide exactly what is queued, and in
+/// what order, before letting it read again.
 /// </summary>
 public sealed class FakeFfmpegProcessRunner : IFfmpegProcessRunner
 {
+    private readonly TaskCompletionSource _startEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _disposeEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     /// <summary>Set to make the next <see cref="StartAsync"/> throw (missing binary, locked file...).</summary>
     public Exception? StartFailure { get; set; }
+
+    /// <summary>When set, <see cref="StartAsync"/> only completes once this task does.</summary>
+    public Task? StartBlocker { get; set; }
+
+    /// <summary>When set, <see cref="DisposeAsync"/> only completes once this task does.</summary>
+    public Task? DisposeBlocker { get; set; }
+
+    /// <summary>Completes as soon as <see cref="StartAsync"/> is entered.</summary>
+    public Task StartEntered => _startEntered.Task;
+
+    /// <summary>Completes as soon as <see cref="DisposeAsync"/> is entered.</summary>
+    public Task DisposeEntered => _disposeEntered.Task;
 
     public FfmpegCommand? StartedCommand { get; private set; }
     public int StartCallCount { get; private set; }
@@ -34,6 +54,7 @@ public sealed class FakeFfmpegProcessRunner : IFfmpegProcessRunner
     public Task StartAsync(FfmpegCommand command, CancellationToken ct)
     {
         StartCallCount++;
+        _startEntered.TrySetResult();
         ct.ThrowIfCancellationRequested();
 
         if (StartFailure is not null)
@@ -42,7 +63,8 @@ public sealed class FakeFfmpegProcessRunner : IFfmpegProcessRunner
         StartedCommand = command;
         IsRunning = true;
         _readerThreadStatsHandler = StatsReceived;   // what the stderr readers hold on to
-        return Task.CompletedTask;
+
+        return StartBlocker ?? Task.CompletedTask;
     }
 
     public Task StopAsync(TimeSpan gracePeriod, CancellationToken ct)
@@ -52,11 +74,14 @@ public sealed class FakeFfmpegProcessRunner : IFfmpegProcessRunner
         return Task.CompletedTask;
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         DisposeCallCount++;
         IsRunning = false;
-        return ValueTask.CompletedTask;
+        _disposeEntered.TrySetResult();
+
+        if (DisposeBlocker is not null)
+            await DisposeBlocker;
     }
 
     // ------------------------------------------------------------------ test drivers
