@@ -116,10 +116,18 @@ public sealed class StreamSession : AggregateRoot
         RaiseDomainEvent(new SessionStopped(Id, DateTimeOffset.UtcNow));
     }
 
-    /// <summary>Starting|Reconnecting -> Failed (emits <see cref="SessionFailed"/>).</summary>
+    /// <summary>
+    /// Starting|Running|Reconnecting -> Failed (emits <see cref="SessionFailed"/>).
+    /// An EXPLICIT giving-up: the launch failed, the attempts are exhausted, or an internal fault
+    /// leaves nothing able to drive the session any further. It is deliberately allowed from
+    /// Running: a live session that can no longer be driven must be able to say so truthfully.
+    ///
+    /// This does NOT open a shortcut for ffmpeg exits — a drop of an established stream still goes
+    /// through <see cref="BeginReconnect"/> and consumes the reconnection budget.
+    /// </summary>
     public void MarkFailed(string reason)
     {
-        if (Status is not (SessionStatus.Starting or SessionStatus.Reconnecting))
+        if (Status is not (SessionStatus.Starting or SessionStatus.Running or SessionStatus.Reconnecting))
             throw InvalidTransition(nameof(MarkFailed));
 
         LastError = reason;

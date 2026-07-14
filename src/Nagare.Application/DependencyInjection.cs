@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Nagare.Application.Abstractions;
 using Nagare.Application.Channels;
@@ -19,6 +20,10 @@ public static class DependencyInjection
     {
         services.AddOptions<ReconnectSettings>()
             .BindConfiguration(ReconnectSettings.SectionName);
+
+        // Source of the reconnection backoff delay (ADR-0008). The BCL abstraction, so the
+        // coordinator can be tested without waiting for real seconds.
+        services.TryAddSingleton(TimeProvider.System);
 
         // The coordinator is a single shared instance exposing three roles.
         services.AddSingleton<StreamSessionCoordinator>();

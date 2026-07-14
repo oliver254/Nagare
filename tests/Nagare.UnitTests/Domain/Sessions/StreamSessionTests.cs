@@ -118,6 +118,27 @@ public sealed class StreamSessionTests
     }
 
     [Fact]
+    public void MarkFailed_FromRunning_TransitionsToFailedAndEmitsSessionFailedOnly()
+    {
+        // Explicit giving-up on a live session: an internal fault leaves nothing able to drive it.
+        // Not to be confused with an ffmpeg exit, which still goes through BeginReconnect and
+        // consumes the reconnection budget (see BeginReconnect_FromRunning_... above).
+        var session = Running();
+
+        session.MarkFailed("the coordinator can no longer drive the session");
+
+        Assert.Equal(SessionStatus.Failed, session.Status);
+        Assert.Equal(0, session.ReconnectAttempts);   // no reconnection was attempted...
+        Assert.Equal("the coordinator can no longer drive the session", session.LastError);
+
+        // ...and none is INVENTED to get there. The events are the audit trail of the session: the
+        // aggregate used to refuse this transition, so the coordinator reached Failed by emitting a
+        // ReconnectStarted for an attempt that never took place. SingleEvent proves it is gone.
+        var failed = SingleEvent<SessionFailed>(session);
+        Assert.Equal("the coordinator can no longer drive the session", failed.Reason);
+    }
+
+    [Fact]
     public void MarkRunning_FromReconnecting_RecoversResetsAttemptsAndEmitsSessionRecovered()
     {
         var session = Reconnecting();
@@ -169,10 +190,6 @@ public sealed class StreamSessionTests
     [Fact]
     public void MarkRunning_FromRunning_ThrowsDomainException()
         => Assert.Throws<DomainException>(() => Running().MarkRunning());
-
-    [Fact]
-    public void MarkFailed_FromRunning_ThrowsDomainException()
-        => Assert.Throws<DomainException>(() => Running().MarkFailed("boom"));
 
     [Theory]
     [InlineData(Operation.MarkRunning)]

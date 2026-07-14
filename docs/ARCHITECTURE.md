@@ -250,7 +250,7 @@ public sealed class StreamSession : AggregateRoot
     public void MarkRunning();                    // Starting|Reconnecting → Running (remet le compteur à 0)
     public void BeginReconnect(string reason);    // Running|Reconnecting → Reconnecting (ou → Failed si tentatives épuisées)
     public void Stop();                           // Starting|Running|Reconnecting → Stopped
-    public void MarkFailed(string reason);        // Starting|Reconnecting → Failed
+    public void MarkFailed(string reason);        // Starting|Running|Reconnecting → Failed (abandon explicite)
     // Toute transition non listée ⇒ DomainException (garde explicite par état)
 }
 ```
@@ -265,6 +265,7 @@ public sealed class StreamSession : AggregateRoot
 | `Starting` | `Stopped` | stop utilisateur pendant le démarrage | `SessionStopped` |
 | `Running` | `Reconnecting` | chute détectée (exit inattendu du process) — tentative 1 | `ReconnectStarted` |
 | `Running` | `Stopped` | stop utilisateur | `SessionStopped` |
+| `Running` | `Failed` | faute interne / abandon explicite (`MarkFailed`) | `SessionFailed` |
 | **`Reconnecting`** | **`Reconnecting`** | **relance morte avant les stats — tentative n+1** | **`ReconnectStarted`** |
 | `Reconnecting` | `Running` | redémarrage ffmpeg réussi (remet le compteur à 0) | `SessionRecovered` |
 | `Reconnecting` | `Failed` | tentatives épuisées (`attempt > MaxAttempts`) | `SessionFailed` |
@@ -275,6 +276,16 @@ Choix assumé : un échec **initial** (état `Starting`) ne déclenche pas le
 backoff — la config est probablement fautive (clé invalide, fichier illisible) ;
 la reconnexion automatique est réservée aux chutes d'un flux déjà établi
 (c'est le sens de « détection de chute » dans la spec).
+
+**`Running → Failed` n'est PAS un raccourci pour les sorties de ffmpeg.** Une
+chute d'un flux établi passe toujours par `BeginReconnect` et **consomme le budget
+de reconnexion** : c'est la règle ci-dessus, inchangée. Cette transition est
+l'**abandon explicite**, déclenché par une faute interne du coordinateur (le seul
+appelant), quand plus rien ne peut faire avancer la session — sans elle, une
+session `Running` devenue impilotable resterait un **zombie**. L'alternative
+(passer par `BeginReconnect` pour atteindre `Failed`) émettait un `ReconnectStarted`
+**mensonger** : les événements de domaine sont la piste d'audit de la session, et
+une tentative de reconnexion qui n'a jamais eu lieu n'a rien à y faire.
 
 **L'auto-transition `Reconnecting → Reconnecting` est le cœur du backoff** : chaque
 relance qui meurt avant d'émettre des stats consomme une tentative de plus, avec
@@ -290,6 +301,7 @@ stateDiagram-v2
     Starting --> Stopped : stop utilisateur
     Running --> Reconnecting : chute du flux
     Running --> Stopped : stop utilisateur
+    Running --> Failed : faute interne / abandon explicite
     Reconnecting --> Reconnecting : relance échouée, tentative n+1
     Reconnecting --> Running : redémarrage OK
     Reconnecting --> Failed : tentatives épuisées
