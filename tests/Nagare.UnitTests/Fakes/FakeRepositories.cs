@@ -50,14 +50,22 @@ public sealed class FakeChannelRepository : IChannelRepository
 /// </summary>
 public sealed class FakeFfmpegCommandBuilder : IFfmpegCommandBuilder
 {
+    /// <summary>
+    /// A realistic stream key, on purpose: a placeholder like "key" would be masked by accident in
+    /// almost any text and would prove nothing about scrubbing.
+    /// </summary>
+    public const string StreamKey = "live_2468_KpH2sAbCdEf";
+
+    public const string Destination = $"rtmp://example.invalid/app/{StreamKey}";
+
     public int BuildCallCount { get; private set; }
 
     public FfmpegCommand Build(StreamProfile profile, Channel channel, string inputFilePath)
     {
         BuildCallCount++;
         return new FfmpegCommand(
-            ["-i", inputFilePath, "-f", "flv", "rtmp://example.invalid/app/key"],
+            ["-i", inputFilePath, "-f", "flv", Destination],
             $"-i {inputFilePath} -f flv rtmp://example.invalid/app/****",
-            ["key"]);
+            [StreamKey]);
     }
 }

@@ -6,6 +6,10 @@ using Nagare.Application.Abstractions;
 using Nagare.Domain.Common;
 using Nagare.Domain.Sessions;
 
+// Aliased, not imported: Nagare.Domain.Channels.Channel would collide with the
+// System.Threading.Channels.Channel that backs the mailbox.
+using ProtectedStreamKey = Nagare.Domain.Channels.ProtectedStreamKey;
+
 namespace Nagare.Application.Streaming;
 
 /// <summary>
@@ -108,7 +112,7 @@ public sealed class StreamSessionCoordinator
         _loop = Task.Run(RunAsync);
     }
 
-    public bool HasActiveSession => _session is { Status: not (SessionStatus.Stopped or SessionStatus.Failed) };
+    public bool HasActiveSession => _session is { } session && session.Status.IsActive();
 
     public event Action<SessionSnapshot>? Changed;
     public event Action<string>? LogAppended;
@@ -262,6 +266,11 @@ public sealed class StreamSessionCoordinator
         }
         catch (Exception ex)
         {
+            // Scrub BEFORE tearing the session down: EndSessionAsync clears _command, and with it the
+            // secrets the scrubber needs. Doing it after would hand the caller — and the screen — the
+            // raw text, key included. (Caught by the test, not by reading the code.)
+            var surfaced = Surface(ex);
+
             if (session is not null)
                 FailSession(session, Describe(ex));   // never leave a session Starting without a runner
 
@@ -270,7 +279,7 @@ public sealed class StreamSessionCoordinator
             if (ex is OperationCanceledException canceled)
                 message.Completion.TrySetCanceled(canceled.CancellationToken);
             else
-                message.Completion.TrySetException(ex);
+                message.Completion.TrySetException(surfaced);
         }
     }
 
@@ -317,8 +326,10 @@ public sealed class StreamSessionCoordinator
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error while stopping the session.");
+
+            var surfaced = Surface(ex);   // before EndSessionAsync clears the secrets (see HandleStartAsync)
             await EndSessionAsync();
-            message.Completion.TrySetException(ex);
+            message.Completion.TrySetException(surfaced);
         }
     }
 
@@ -375,6 +386,17 @@ public sealed class StreamSessionCoordinator
                 // From Running a drop was detected; from Reconnecting a relaunch died before
                 // producing stats, so the aggregate counts a further attempt.
                 session.BeginReconnect(reason);
+
+                if (session.Status is SessionStatus.Reconnecting)
+                {
+                    // Forget the dead process's stats. HealthOf compares dropped-frame counters
+                    // between two samples; the relaunched ffmpeg restarts its own counters at zero,
+                    // so keeping the corpse's figures would make the first real burst of drops read
+                    // as an improvement — a Warning silently downgraded to Ok.
+                    _lastStats = null;
+                    _health = HealthIndicator.Ok;
+                }
+
                 DrainEvents(session);
 
                 if (session.Status is SessionStatus.Reconnecting)
@@ -500,7 +522,7 @@ public sealed class StreamSessionCoordinator
     private void OnOutputLine(string line)
     {
         Append(line);
-        LogAppended?.Invoke(line);
+        RaiseSafely(() => LogAppended?.Invoke(line), nameof(LogAppended));
     }
 
     private async Task CleanupRunnerAsync()
@@ -596,7 +618,62 @@ public sealed class StreamSessionCoordinator
         }
     }
 
-    private static string Describe(Exception ex) => $"{ex.GetType().Name}: {ex.Message}";
+    /// <summary>
+    /// Turns an exception into the reason carried by <see cref="SessionFailed"/> and
+    /// <see cref="StreamSession.LastError"/> — both surfaced in the UI.
+    ///
+    /// The reason is SCRUBBED. `StreamSession` documents that the coordinator hands it an already
+    /// scrubbed text, and ARCHITECTURE §6.3 makes the same promise. No exception reachable here
+    /// carries the ffmpeg arguments today, so nothing leaks — but the invariant was merely true by
+    /// luck, and a future exception type quoting the command would have turned that luck into a
+    /// stream key on screen. The secrets are right here; honouring the contract costs one call.
+    /// </summary>
+    private string Describe(Exception ex) => Scrub($"{ex.GetType().Name}: {ex.Message}");
+
+    /// <summary>
+    /// Prepares an exception to cross the boundary to the caller — and therefore to the SCREEN, where
+    /// the view model shows its Message in an InfoBar.
+    ///
+    /// <see cref="DomainException"/> passes through untouched: its message is ours, it holds no
+    /// secret, and the UI relies on its type to tell a validation error from a failure. Anything else
+    /// is an infrastructure exception whose text we do not control — it is re-surfaced SCRUBBED.
+    /// Today none of them embeds the ffmpeg arguments, but that is luck, not a guarantee, and this is
+    /// the one path that leads straight to the user's eyes.
+    /// </summary>
+    private Exception Surface(Exception ex)
+        => ex is DomainException ? ex : new StreamOperationException(Describe(ex));
+
+    /// <summary>Replaces every secret of the active command by the mask, longest first.</summary>
+    private string Scrub(string text)
+    {
+        var secrets = _command?.Secrets;
+        if (secrets is null || secrets.Count == 0)
+            return text;
+
+        // Longest first: a secret containing another one must be masked as a whole.
+        foreach (var secret in secrets.Where(s => !string.IsNullOrEmpty(s)).OrderByDescending(s => s.Length))
+            text = text.Replace(secret, ProtectedStreamKey.Mask, StringComparison.Ordinal);
+
+        return text;
+    }
+
+    /// <summary>
+    /// Raises a subscriber callback WITHOUT ever letting it fail the session. Subscribers run on
+    /// the mailbox loop thread: a WinUI view model throwing while marshalling to the dispatcher
+    /// would otherwise bubble into the loop's catch and kill a LIVE broadcast. A broken UI must
+    /// never take the stream down with it.
+    /// </summary>
+    private void RaiseSafely(Action raise, string what)
+    {
+        try
+        {
+            raise();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "A {What} subscriber threw. The session is unaffected.", what);
+        }
+    }
 
     // ------------------------------------------------------------- projection & logs
 
@@ -609,7 +686,11 @@ public sealed class StreamSessionCoordinator
         NotifyChanged(session);
     }
 
-    private void NotifyChanged(StreamSession session) => Changed?.Invoke(Snapshot(session));
+    private void NotifyChanged(StreamSession session)
+    {
+        var snapshot = Snapshot(session);
+        RaiseSafely(() => Changed?.Invoke(snapshot), nameof(Changed));
+    }
 
     private SessionSnapshot Snapshot(StreamSession session)
         => new(

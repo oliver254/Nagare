@@ -4,20 +4,18 @@ Statut : accepté — 2026-07-06
 
 ## Contexte
 
-La spec initiale mentionnait .NET 9. Constat sur la machine de dev (addendum
-SPEC du 2026-07-06) : SDKs installés = 10.0.301 et 10.0.100-rc.1, **aucun SDK ni
-runtime .NET 9**. Cibler `net9.0` produirait une solution non exécutable
-localement sans installation supplémentaire, pour une app locale mono-poste.
+La spec initiale mentionnait .NET 9. Aucun SDK ni runtime .NET 9 n'était présent
+sur l'environnement de développement, seulement du .NET 10 : cibler `net9.0`
+aurait produit une solution non exécutable sans installation supplémentaire, pour
+une application locale mono-poste.
 
 ## Décision
 
 Tous les projets ciblent **`net10.0`** avec **C# 14**.
 
-> Mise à jour 2026-07-06 : `global.json` **supprimé** à la demande de
-> l'utilisateur. Le build utilise donc le SDK 10.x le plus récent installé
-> (actuellement `10.0.301`, la RC `10.0.100-rc.1` étant antérieure et non
-> sélectionnée par défaut). À réintroduire si un besoin de reproductibilité
-> stricte de la version de SDK apparaît (CI, poste partagé).
+> Pas de `global.json` : le build utilise le SDK 10.x le plus récent installé.
+> À réintroduire si un besoin de reproductibilité stricte de la version de SDK
+> apparaît (CI, poste partagé).
 
 ## Conséquences
 

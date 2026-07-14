@@ -1,18 +1,19 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Monbsoft.BrilliantMediator.Extensions;
 using Nagare.Application.Abstractions;
-using Nagare.Application.Channels;
-using Nagare.Application.Media;
-using Nagare.Application.Profiles;
 using Nagare.Application.Streaming;
-using Nagare.Domain.Common;
 
 namespace Nagare.Application;
 
 /// <summary>
-/// Explicit DI registration of the Application layer (ADR-0003): one line per handler,
-/// no assembly scanning.
+/// DI registration of the Application layer (ADR-0007). The handlers are no longer listed one by
+/// one: <c>AddGeneratedHandlers()</c> is emitted at compile time by BrilliantMediator.SourceGenerator,
+/// which scans THIS assembly — so a new handler can no longer be forgotten in the wiring.
+///
+/// The composition root must still call <c>UseBrilliantMediator()</c> on the built
+/// <see cref="IServiceProvider"/>: it is what populates the dispatch registry.
 /// </summary>
 public static class DependencyInjection
 {
@@ -31,26 +32,11 @@ public static class DependencyInjection
         services.AddSingleton<ISessionMonitor>(sp => sp.GetRequiredService<StreamSessionCoordinator>());
         services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<StreamSessionCoordinator>());
 
-        // Profiles
-        services.AddScoped<ICommandHandler<SaveStreamProfileCommand, ProfileId>, SaveStreamProfileHandler>();
-        services.AddScoped<ICommandHandler<DeleteStreamProfileCommand>, DeleteStreamProfileHandler>();
-        services.AddScoped<IQueryHandler<GetStreamProfilesQuery, IReadOnlyList<StreamProfileDto>>, GetStreamProfilesHandler>();
-
-        // Channels
-        services.AddScoped<ICommandHandler<SaveChannelCommand, ChannelId>, SaveChannelHandler>();
-        services.AddScoped<ICommandHandler<DeleteChannelCommand>, DeleteChannelHandler>();
-        services.AddScoped<IQueryHandler<GetChannelsQuery, IReadOnlyList<ChannelDto>>, GetChannelsHandler>();
-
-        // Streaming
-        services.AddScoped<ICommandHandler<StartStreamCommand, SessionId>, StartStreamHandler>();
-        services.AddScoped<ICommandHandler<StopStreamCommand>, StopStreamHandler>();
-        services.AddScoped<IQueryHandler<GetSessionStatusQuery, SessionSnapshot?>, GetSessionStatusHandler>();
-        services.AddScoped<IQueryHandler<GetSessionLogsQuery, IReadOnlyList<string>>, GetSessionLogsHandler>();
-        services.AddScoped<IQueryHandler<BuildCommandPreviewQuery, string>, BuildCommandPreviewHandler>();
-
-        // Media
-        services.AddScoped<IQueryHandler<ValidateMediaFileQuery, MediaValidationResult>, ValidateMediaFileHandler>();
-        services.AddScoped<IQueryHandler<GetFfmpegEnvironmentQuery, FfmpegEnvironmentReport>, GetFfmpegEnvironmentHandler>();
+        // CQRS: commands, queries and their handlers, registered at compile time.
+        services
+            .AddBrilliantMediator()
+            .AddGeneratedHandlers()
+            .Build();
 
         return services;
     }

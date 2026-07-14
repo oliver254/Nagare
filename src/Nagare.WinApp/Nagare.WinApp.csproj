@@ -1,13 +1,42 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <!-- Configuration validée par le spike de faisabilité (plan §7, phase 0) : application WinUI 3
+         NON EMPAQUETÉE — un simple .exe, pas de MSIX, pas de certificat (ADR-0006). -->
+    <OutputType>WinExe</OutputType>
+    <!-- Écrase le net10.0 de Directory.Build.props : WinUI exige un TFM Windows. -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Platforms = x64 : déclaré pour TOUTE la solution dans Directory.Build.props
+         (WinUI n'accepte pas AnyCPU, et un désalignement empêche VS d'ouvrir la solution). -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <!-- Embarque le runtime Windows App SDK : rien à installer sur la machine cible. -->
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+
+    <RootNamespace>Nagare.WinApp</RootNamespace>
     <!-- Config machine-locale (chemins ffmpeg, clé de test) hors du dépôt : User Secrets. -->
     <UserSecretsId>nagare-winapp-local</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MudBlazor" Version="9.6.0" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+
+    <!-- En quittant Microsoft.NET.Sdk.Web, on perd le chargement IMPLICITE d'appsettings.json ET
+         des User Secrets : le SDK classique ne référence ni l'hôte générique ni ces fournisseurs de
+         configuration. Sans eux, FfmpegOptions.ExecutablePath retomberait silencieusement sur
+         « ffmpeg » résolu depuis le PATH (plan §7, phase 3). -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Le fichier doit suivre l'exécutable : le content root de l'hôte est AppContext.BaseDirectory. -->
+    <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
@@ -15,6 +44,12 @@
     <ProjectReference Include="..\Nagare.Application\Nagare.Application.csproj" />
     <ProjectReference Include="..\Nagare.Domain\Nagare.Domain.csproj" />
     <ProjectReference Include="..\Nagare.Infrastructure\Nagare.Infrastructure.csproj" />
+    <!-- Les ViewModels vivent dans leur propre projet — PAS pour la testabilité (les fusionner
+         dans Application, qui cible net10.0, les rendrait tout aussi testables), mais parce
+         qu'Application ne doit dépendre ni d'une lib MVVM ni de la notion de thread UI : ces
+         paquets couleraient EN TRANSITIF dans Infrastructure, qui référence Application.
+         Raisonnement complet dans ARCHITECTURE.md §1. -->
+    <ProjectReference Include="..\Nagare.ViewModels\Nagare.ViewModels.csproj" />
   </ItemGroup>
 
 </Project>

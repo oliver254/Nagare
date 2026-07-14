@@ -1,3 +1,4 @@
+using Monbsoft.BrilliantMediator.Abstractions.Queries;
 using Nagare.Application.Abstractions;
 using Nagare.Domain.Common;
 
@@ -7,7 +8,8 @@ namespace Nagare.Application.Streaming;
 /// Builds the masked command line to preview before launching (ARCHITECTURE.md §3.2).
 /// Returns <see cref="FfmpegCommand.MaskedCommandLine"/> — the key is never in clear.
 /// </summary>
-public sealed record BuildCommandPreviewQuery(ProfileId ProfileId, ChannelId ChannelId, string InputFilePath);
+public sealed record BuildCommandPreviewQuery(ProfileId ProfileId, ChannelId ChannelId, string InputFilePath)
+    : IQuery<string>;
 
 public sealed class BuildCommandPreviewHandler(
     IStreamProfileRepository profiles,
@@ -15,7 +17,7 @@ public sealed class BuildCommandPreviewHandler(
     IFfmpegCommandBuilder builder)
     : IQueryHandler<BuildCommandPreviewQuery, string>
 {
-    public async Task<string> HandleAsync(BuildCommandPreviewQuery query, CancellationToken ct)
+    public async Task<string> Handle(BuildCommandPreviewQuery query, CancellationToken ct = default)
     {
         var profile = await profiles.GetByIdAsync(query.ProfileId, ct)
             ?? throw new DomainException($"Profile {query.ProfileId} not found.");

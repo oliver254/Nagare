@@ -9,6 +9,21 @@ public enum VideoCodec
     Libx264      // -> libx264
 }
 
+public static class VideoCodecExtensions
+{
+    /// <summary>
+    /// True when the codec is an NVIDIA hardware encoder, and therefore CANNOT run on a machine
+    /// whose ffmpeg does not expose NVENC (<c>FfmpegEnvironmentReport.NvencAvailable</c>).
+    ///
+    /// The single source of truth for "this codec needs the GPU encoder": the start preflight
+    /// blocks on it, the command builder emits <c>-rc</c> on it (an NVENC-only flag), and the preset
+    /// families below split on it. Three copies of the same list of codecs, one enum value away from
+    /// silently disagreeing.
+    /// </summary>
+    public static bool RequiresNvenc(this VideoCodec codec)
+        => codec is VideoCodec.H264Nvenc or VideoCodec.HevcNvenc;
+}
+
 public enum RateControl { Cbr, Vbr }
 
 public readonly record struct Resolution(int Width, int Height);
@@ -43,6 +58,14 @@ public sealed record EncodingSettings
     /// <summary>Optional -> -r</summary>
     public int? Fps { get; }
 
+    /// <summary>
+    /// Presets accepted by a codec — the very list invariant E6 validates against. Public so the UI
+    /// can OFFER exactly the valid values instead of restating them: a second copy of this list in a
+    /// ComboBox would be a duplicate of a domain rule, free to drift away from it.
+    /// </summary>
+    public static IReadOnlyList<string> PresetsFor(VideoCodec codec)
+        => codec.RequiresNvenc() ? NvencPresets : Libx264Presets;
+
     public EncodingSettings(
         VideoCodec codec,
         string preset,
@@ -76,8 +99,7 @@ public sealed record EncodingSettings
             throw new DomainException("E5: GOP must be positive and 0 < keyint_min <= g.");
 
         // E6 - preset known for the codec
-        var knownPresets = codec == VideoCodec.Libx264 ? Libx264Presets : NvencPresets;
-        if (!knownPresets.Contains(preset))
+        if (!PresetsFor(codec).Contains(preset))
             throw new DomainException($"E6: preset '{preset}' unknown for codec {codec}.");
 
         // E7 - h264/hevc encoder requirement: even dimensions

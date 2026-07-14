@@ -77,6 +77,23 @@ dotnet user-secrets list
 
 Laisser ces valeurs **vides** résout `ffmpeg`/`ffprobe` depuis le `PATH` (`FfmpegOptions`).
 
+### 🔇 Rien de la machine ne sort dans le dépôt
+
+Le dépôt, les commits, les **PR** et leurs **commentaires** sont **publics**. On n'y écrit
+donc **jamais** :
+
+- de **chemins absolus** (`C:\Users\…`) — ils exposent le nom d'utilisateur ;
+- de **matériel** (modèle de GPU, de CPU), de **versions de pilotes** ;
+- de version d'OS, de liste de SDK installés, de nom de machine ;
+- toute autre empreinte de l'environnement local.
+
+Ces informations n'apportent rien à un lecteur du projet et constituent une **fuite de
+renseignement** sur le poste du mainteneur.
+
+**Formulez en termes de projet, pas de machine** : « ffmpeg résolu depuis le `PATH` ou
+un chemin configuré » plutôt que le chemin réel ; « encodage NVENC vérifié » plutôt que
+le modèle exact de la carte.
+
 ### ⚠️ Frontière à ne pas franchir
 
 **Les User Secrets ne sont PAS chiffrés** — c'est du JSON en clair sur le disque.

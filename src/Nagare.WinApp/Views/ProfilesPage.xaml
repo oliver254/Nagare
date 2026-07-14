@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Nagare.WinApp.Views.ProfilesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:profiles="using:Nagare.Application.Profiles"
+    mc:Ignorable="d"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+
+    <Grid Margin="24" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="Profils d'encodage" Style="{StaticResource TitleTextBlockStyle}" />
+
+        <!-- Les invariants E1-E8 sont levés par le DOMAINE (DomainException) et affichés ici tels
+             quels : aucune validation n'est réécrite dans l'UI. -->
+        <InfoBar
+            Grid.Row="1"
+            IsOpen="{x:Bind ViewModel.ErrorMessage, Converter={StaticResource NotNullToBool}, Mode=OneWay}"
+            IsClosable="True"
+            Severity="Error"
+            Title="Réglage refusé"
+            Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" />
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
+            <Button Content="Nouveau" Style="{StaticResource AccentButtonStyle}" Command="{x:Bind ViewModel.NewCommand}" />
+            <Button Content="Modifier" Command="{x:Bind ViewModel.EditCommand}" />
+            <Button Content="Supprimer" Command="{x:Bind ViewModel.DeleteCommand}" />
+        </StackPanel>
+
+        <Grid Grid.Row="3" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="420" />
+            </Grid.ColumnDefinitions>
+
+            <ListView
+                Grid.Column="0"
+                ItemsSource="{x:Bind ViewModel.Profiles}"
+                SelectedItem="{x:Bind ViewModel.SelectedProfile, Mode=TwoWay}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1">
+
+                <ListView.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <ItemsStackPanel Orientation="Vertical" />
+                    </ItemsPanelTemplate>
+                </ListView.ItemsPanel>
+
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="profiles:StreamProfileDto">
+                        <StackPanel Spacing="2" Padding="0,8">
+                            <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <TextBlock
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="{x:Bind Video, Converter={StaticResource EncodingSummary}}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <ScrollViewer
+                Grid.Column="1"
+                Visibility="{x:Bind ViewModel.IsEditing, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
+
+                <StackPanel Spacing="10" Padding="0,0,12,0">
+                    <TextBlock Text="Édition" Style="{StaticResource SubtitleTextBlockStyle}" />
+
+                    <TextBox Header="Nom" Text="{x:Bind ViewModel.EditName, Mode=TwoWay}" />
+
+                    <TextBlock Text="Vidéo" Style="{StaticResource BodyStrongTextBlockStyle}" />
+
+                    <ComboBox
+                        Header="Codec"
+                        HorizontalAlignment="Stretch"
+                        ItemsSource="{x:Bind ViewModel.VideoCodecs}"
+                        SelectedItem="{x:Bind ViewModel.EditCodec, Mode=TwoWay}" />
+
+                    <!-- La liste des presets vient du DOMAINE (EncodingSettings.PresetsFor) : c'est
+                         exactement celle que valide l'invariant E6. -->
+                    <ComboBox
+                        Header="Preset"
+                        HorizontalAlignment="Stretch"
+                        ItemsSource="{x:Bind ViewModel.AvailablePresets}"
+                        SelectedItem="{x:Bind ViewModel.EditPreset, Mode=TwoWay}" />
+
+                    <ComboBox
+                        Header="Rate control"
+                        HorizontalAlignment="Stretch"
+                        ItemsSource="{x:Bind ViewModel.RateControls}"
+                        SelectedItem="{x:Bind ViewModel.EditRateControl, Mode=TwoWay}" />
+
+                    <NumberBox Header="Bitrate (kbps)" SpinButtonPlacementMode="Compact"
+                               Value="{x:Bind ViewModel.EditBitrateKbps, Mode=TwoWay}" />
+                    <NumberBox Header="Maxrate (kbps)" SpinButtonPlacementMode="Compact"
+                               Value="{x:Bind ViewModel.EditMaxrateKbps, Mode=TwoWay}" />
+                    <NumberBox Header="Bufsize (kbps)" SpinButtonPlacementMode="Compact"
+                               Value="{x:Bind ViewModel.EditBufsizeKbps, Mode=TwoWay}" />
+                    <NumberBox Header="GOP (-g)" SpinButtonPlacementMode="Compact"
+                               Value="{x:Bind ViewModel.EditGopSize, Mode=TwoWay}" />
+                    <NumberBox Header="keyint_min" SpinButtonPlacementMode="Compact"
+                               Value="{x:Bind ViewModel.EditKeyintMin, Mode=TwoWay}" />
+
+                    <!-- ToggleSwitch et non CheckBox : IsOn est un bool, IsChecked un bool? — un
+                         x:Bind TwoWay vers une propriété bool s'y casserait. -->
+                    <ToggleSwitch Header="Forcer une résolution" IsOn="{x:Bind ViewModel.EditHasResolution, Mode=TwoWay}" />
+                    <NumberBox Header="Largeur" SpinButtonPlacementMode="Compact"
+                               IsEnabled="{x:Bind ViewModel.EditHasResolution, Mode=OneWay}"
+                               Value="{x:Bind ViewModel.EditWidth, Mode=TwoWay}" />
+                    <NumberBox Header="Hauteur" SpinButtonPlacementMode="Compact"
+                               IsEnabled="{x:Bind ViewModel.EditHasResolution, Mode=OneWay}"
+                               Value="{x:Bind ViewModel.EditHeight, Mode=TwoWay}" />
+
+                    <ToggleSwitch Header="Forcer les fps" IsOn="{x:Bind ViewModel.EditHasFps, Mode=TwoWay}" />
+                    <NumberBox Header="fps" SpinButtonPlacementMode="Compact"
+                               IsEnabled="{x:Bind ViewModel.EditHasFps, Mode=OneWay}"
+                               Value="{x:Bind ViewModel.EditFps, Mode=TwoWay}" />
+
+                    <TextBlock Text="Audio" Style="{StaticResource BodyStrongTextBlockStyle}" />
+
+                    <ComboBox
+                        Header="Codec audio"
+                        HorizontalAlignment="Stretch"
+                        ItemsSource="{x:Bind ViewModel.AudioCodecs}"
+                        SelectedItem="{x:Bind ViewModel.EditAudioCodec, Mode=TwoWay}" />
+
+                    <NumberBox Header="Bitrate audio (kbps)" SpinButtonPlacementMode="Compact"
+                               Value="{x:Bind ViewModel.EditAudioBitrateKbps, Mode=TwoWay}" />
+
+                    <ComboBox
+                        Header="Sample rate (Hz)"
+                        HorizontalAlignment="Stretch"
+                        ItemsSource="{x:Bind ViewModel.SampleRates}"
+                        SelectedItem="{x:Bind ViewModel.EditSampleRateHz, Mode=TwoWay}" />
+
+                    <TextBlock Text="Entrée" Style="{StaticResource BodyStrongTextBlockStyle}" />
+
+                    <ToggleSwitch Header="Lire à la vitesse native (-re)" IsOn="{x:Bind ViewModel.EditReadAtNativeRate, Mode=TwoWay}" />
+                    <ToggleSwitch Header="Boucle infinie (-stream_loop -1)" IsOn="{x:Bind ViewModel.EditLoopInfinitely, Mode=TwoWay}" />
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="Enregistrer" Style="{StaticResource AccentButtonStyle}" Command="{x:Bind ViewModel.SaveCommand}" />
+                        <Button Content="Annuler" Command="{x:Bind ViewModel.CancelCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</Page>

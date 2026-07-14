@@ -10,8 +10,11 @@ public enum AudioCodec
 /// <summary>Audio settings of an encoding profile. Immutable value object.</summary>
 public sealed record AudioSettings
 {
-    /// <summary>Sample rates accepted by the targeted RTMP platforms (ARCHITECTURE.md §2.2).</summary>
-    private static readonly int[] AllowedSampleRates = [44100, 48000];
+    /// <summary>
+    /// Sample rates accepted by the targeted RTMP platforms (ARCHITECTURE.md §2.2). Public so the UI
+    /// offers exactly these values rather than restating them — the rule stays validated here.
+    /// </summary>
+    public static IReadOnlyList<int> AllowedSampleRates { get; } = [44100, 48000];
 
     public AudioCodec Codec { get; }
     public int BitrateKbps { get; }

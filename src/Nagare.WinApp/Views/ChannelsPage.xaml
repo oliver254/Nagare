@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Nagare.WinApp.Views.ChannelsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:channels="using:Nagare.Application.Channels"
+    mc:Ignorable="d"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+
+    <Grid Margin="24" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="Channels" Style="{StaticResource TitleTextBlockStyle}" />
+
+        <InfoBar
+            Grid.Row="1"
+            IsOpen="{x:Bind ViewModel.ErrorMessage, Converter={StaticResource NotNullToBool}, Mode=OneWay}"
+            IsClosable="True"
+            Severity="Error"
+            Title="Erreur"
+            Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" />
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
+            <Button Content="Nouveau" Style="{StaticResource AccentButtonStyle}" Command="{x:Bind ViewModel.NewCommand}" />
+            <Button Content="Modifier" Command="{x:Bind ViewModel.EditCommand}" />
+            <Button Content="Supprimer" Command="{x:Bind ViewModel.DeleteCommand}" />
+        </StackPanel>
+
+        <Grid Grid.Row="3" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="380" />
+            </Grid.ColumnDefinitions>
+
+            <ListView
+                Grid.Column="0"
+                ItemsSource="{x:Bind ViewModel.Channels}"
+                SelectedItem="{x:Bind ViewModel.SelectedChannel, Mode=TwoWay}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1">
+
+                <ListView.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <ItemsStackPanel Orientation="Vertical" />
+                    </ItemsPanelTemplate>
+                </ListView.ItemsPanel>
+
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="channels:ChannelDto">
+                        <StackPanel Spacing="2" Padding="0,8">
+                            <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <TextBlock
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="{x:Bind Platform, Converter={StaticResource AsText}}" />
+                            <TextBlock
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="{x:Bind BaseUrl}" />
+                            <!-- La clé n'est JAMAIS réaffichée : le DTO ne la porte pas, il dit
+                                 seulement si elle est configurée (ADR-0005). -->
+                            <TextBlock
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="{x:Bind KeyConfigured, Converter={StaticResource KeyState}}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <ScrollViewer
+                Grid.Column="1"
+                Visibility="{x:Bind ViewModel.IsEditing, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
+
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Édition" Style="{StaticResource SubtitleTextBlockStyle}" />
+
+                    <TextBox Header="Nom" Text="{x:Bind ViewModel.EditName, Mode=TwoWay}" />
+
+                    <ComboBox
+                        Header="Plateforme"
+                        HorizontalAlignment="Stretch"
+                        ItemsSource="{x:Bind ViewModel.Platforms}"
+                        SelectedItem="{x:Bind ViewModel.EditPlatform, Mode=TwoWay}" />
+
+                    <TextBox Header="URL de base" Text="{x:Bind ViewModel.EditBaseUrl, Mode=TwoWay}" />
+
+                    <!-- Saisie en PasswordBox, jamais réaffichée, jamais loggée (plan §6). -->
+                    <PasswordBox
+                        Header="Clé de stream"
+                        Password="{x:Bind ViewModel.EditStreamKey, Mode=TwoWay}"
+                        PlaceholderText="•••••••••••" />
+
+                    <TextBlock
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        TextWrapping="Wrap"
+                        Text="Laisser vide conserve la clé actuelle : une clé enregistrée ne peut jamais être réaffichée." />
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="Enregistrer" Style="{StaticResource AccentButtonStyle}" Command="{x:Bind ViewModel.SaveCommand}" />
+                        <Button Content="Annuler" Command="{x:Bind ViewModel.CancelCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</Page>
