@@ -7,6 +7,9 @@ using Microsoft.UI.Xaml;
 using Monbsoft.BrilliantMediator.Extensions;
 using Nagare.Application;
 using Nagare.Infrastructure;
+using Nagare.Presentation;
+using Nagare.Presentation.Abstractions;
+using Nagare.WinApp.Services;
 
 namespace Nagare.WinApp;
 
@@ -38,6 +41,12 @@ public partial class App : Microsoft.UI.Xaml.Application
     /// <summary>Service provider of the running host, for the views and their ViewModels.</summary>
     public IServiceProvider Services => _host.Services;
 
+    /// <summary>
+    /// Typed access to the running application. <c>Application.Current</c> is typed as the base
+    /// class, and the pages need <see cref="Services"/> to resolve their ViewModel.
+    /// </summary>
+    public static new App Current => (App)Microsoft.UI.Xaml.Application.Current;
+
     private static IHost BuildHost()
     {
         // The content root is the folder of the executable, NOT the current directory: launched from
@@ -61,6 +70,14 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         builder.Services.AddNagareApplication();
         builder.Services.AddNagareInfrastructure(builder.Configuration);
+        builder.Services.AddNagarePresentation();
+
+        // UI-thread-bound services: the WinUI implementations of the two ports the ViewModels need.
+        // Both go through MainWindowContext, because the container is built BEFORE the window exists
+        // — nothing could capture a DispatcherQueue or an HWND at this point.
+        builder.Services.AddSingleton<MainWindowContext>();
+        builder.Services.AddSingleton<IUiDispatcher, UiDispatcher>();
+        builder.Services.AddSingleton<IVideoFilePicker, FilePickerService>();
 
         return builder.Build();
     }
@@ -72,6 +89,11 @@ public partial class App : Microsoft.UI.Xaml.Application
         await _host.StartAsync();
 
         _window = new MainWindow();
+
+        // From here on, UiDispatcher can reach the UI thread and FilePickerService the HWND. Done
+        // BEFORE Activate(): the first page loads on activation and resolves its ViewModel at once.
+        _host.Services.GetRequiredService<MainWindowContext>().Attach(_window);
+
         _window.AppWindow.Closing += OnMainWindowClosing;
         _window.Activate();
     }
@@ -84,6 +106,13 @@ public partial class App : Microsoft.UI.Xaml.Application
     /// completion of its mailbox loop without ConfigureAwait(false), so its continuation is posted
     /// back to this very thread. Cancel-then-close keeps the message loop alive, which is what lets
     /// ffmpeg actually be killed.
+    ///
+    /// <para>The disposal is <b>asynchronous</b>, and that is not cosmetic. <c>ServiceProvider.Dispose()</c>
+    /// THROWS on a singleton that implements <see cref="IAsyncDisposable"/> without
+    /// <see cref="IDisposable"/> — which is exactly what the StreamSessionCoordinator is. The
+    /// exception used to escape from the finally block BEFORE <c>Close()</c> was reached: clicking
+    /// the cross stopped the host but never closed the window, and the application hung, alive,
+    /// forever. Constaté en lançant réellement l'app.</para>
     /// </summary>
     private async void OnMainWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
     {
@@ -96,6 +125,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         try
         {
             await _host.StopAsync();
+            await DisposeHostAsync();
         }
         catch (Exception ex)
         {
@@ -104,8 +134,17 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         finally
         {
-            _host.Dispose();
+            // Whatever happened above, the window MUST close: an application that refuses to die is
+            // worse than one that dies badly.
             _window?.Close();
         }
+    }
+
+    private async ValueTask DisposeHostAsync()
+    {
+        if (_host is IAsyncDisposable asyncDisposable)
+            await asyncDisposable.DisposeAsync();
+        else
+            _host.Dispose();
     }
 }

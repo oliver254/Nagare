@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Nagare.Presentation</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nagare.Application\Nagare.Application.csproj" />
+    <ProjectReference Include="..\Nagare.Domain\Nagare.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- MVVM source-generated (ADR-0006) : aucune réflexion, aucun lien avec WinUI. -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+
+    <!-- Les ViewModels ne parlent au métier QUE par IMediator (ADR-0007). -->
+    <PackageReference Include="BrilliantMediator" Version="3.0.0" />
+
+    <!-- AddNagarePresentation() : enregistrement des ViewModels. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

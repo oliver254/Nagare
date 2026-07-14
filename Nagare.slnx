@@ -3,6 +3,7 @@
     <Project Path="src/Nagare.Application/Nagare.Application.csproj" />
     <Project Path="src/Nagare.Domain/Nagare.Domain.csproj" />
     <Project Path="src/Nagare.Infrastructure/Nagare.Infrastructure.csproj" />
+    <Project Path="src/Nagare.Presentation/Nagare.Presentation.csproj" />
     <Project Path="src/Nagare.WinApp/Nagare.WinApp.csproj" />
   </Folder>
   <Folder Name="/tests/">

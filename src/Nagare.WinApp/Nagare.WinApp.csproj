@@ -43,6 +43,9 @@
     <ProjectReference Include="..\Nagare.Application\Nagare.Application.csproj" />
     <ProjectReference Include="..\Nagare.Domain\Nagare.Domain.csproj" />
     <ProjectReference Include="..\Nagare.Infrastructure\Nagare.Infrastructure.csproj" />
+    <!-- Les ViewModels vivent hors du projet WinUI : cible net10.0, donc testables par
+         Nagare.UnitTests (net10.0), qui ne peut pas référencer un TFM Windows. -->
+    <ProjectReference Include="..\Nagare.Presentation\Nagare.Presentation.csproj" />
   </ItemGroup>
 
 </Project>

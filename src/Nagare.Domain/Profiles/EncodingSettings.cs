@@ -43,6 +43,14 @@ public sealed record EncodingSettings
     /// <summary>Optional -> -r</summary>
     public int? Fps { get; }
 
+    /// <summary>
+    /// Presets accepted by a codec — the very list invariant E6 validates against. Public so the UI
+    /// can OFFER exactly the valid values instead of restating them: a second copy of this list in a
+    /// ComboBox would be a duplicate of a domain rule, free to drift away from it.
+    /// </summary>
+    public static IReadOnlyList<string> PresetsFor(VideoCodec codec)
+        => codec == VideoCodec.Libx264 ? Libx264Presets : NvencPresets;
+
     public EncodingSettings(
         VideoCodec codec,
         string preset,
@@ -76,8 +84,7 @@ public sealed record EncodingSettings
             throw new DomainException("E5: GOP must be positive and 0 < keyint_min <= g.");
 
         // E6 - preset known for the codec
-        var knownPresets = codec == VideoCodec.Libx264 ? Libx264Presets : NvencPresets;
-        if (!knownPresets.Contains(preset))
+        if (!PresetsFor(codec).Contains(preset))
             throw new DomainException($"E6: preset '{preset}' unknown for codec {codec}.");
 
         // E7 - h264/hevc encoder requirement: even dimensions

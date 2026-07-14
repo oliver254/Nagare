@@ -20,6 +20,9 @@
     <ProjectReference Include="..\..\src\Nagare.Domain\Nagare.Domain.csproj" />
     <ProjectReference Include="..\..\src\Nagare.Application\Nagare.Application.csproj" />
     <ProjectReference Include="..\..\src\Nagare.Infrastructure\Nagare.Infrastructure.csproj" />
+    <!-- Les ViewModels : net10.0, sans WinUI, donc testables ici (Nagare.WinApp, lui, cible un TFM
+         Windows et serait irréférençable depuis ce projet). -->
+    <ProjectReference Include="..\..\src\Nagare.Presentation\Nagare.Presentation.csproj" />
   </ItemGroup>
 
 </Project>
