@@ -1,0 +1,16 @@
+<!-- @dsCard group="Colors" viewport="700x180" name="Surfaces & layers" subtitle="Mica base, solid backgrounds, card & layer fills" -->
+<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css"><style>
+html,body{margin:0}body{background:var(--bg-base);font-family:var(--font-sans);color:var(--text-primary);padding:18px}
+.stage{background:var(--bg-base);border:1px solid var(--stroke-divider);border-radius:var(--radius-overlay);padding:16px;display:flex;gap:12px}
+.tile{flex:1;border-radius:var(--radius-control);padding:12px;font-size:12px;border:1px solid var(--stroke-card)}
+.k{display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);margin-top:6px}
+.card{background:var(--surface-card);box-shadow:var(--shadow-card)}
+</style></head><body>
+<div class="stage">
+<div class="tile" style="background:var(--bg-tertiary)">Pane<span class="k">--bg-tertiary</span></div>
+<div class="tile card">Card<span class="k">--surface-card</span></div>
+<div class="tile" style="background:var(--layer-default)">Layer<span class="k">--layer-default</span></div>
+<div class="tile" style="background:var(--control-fill-input)">Input<span class="k">--control-fill-input</span></div>
+</div>
+<div style="margin-top:10px;font-size:12px;line-height:16px;color:var(--text-secondary)">The window backdrop is <b>Mica</b> (<code style="font-family:var(--font-mono)">--bg-base</code>). Cards are a translucent layer fill over it, bounded by a 1px stroke — flat, no shadow.</div>
+</body></html>

@@ -1,0 +1,17 @@
+<!-- @dsCard group="Colors" viewport="700x210" name="Semantic — status" subtitle="Success / caution / critical / attention · foreground + background" -->
+<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css"><style>
+html,body{margin:0}body{background:var(--bg-base);font-family:var(--font-sans);color:var(--text-primary);padding:18px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.bar{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-control);border:1px solid var(--stroke-card)}
+.dot{width:12px;height:12px;border-radius:50%;flex:0 0 auto}
+.t{font-size:13px;font-weight:600}.k{font-family:var(--font-mono);font-size:10px;margin-left:auto;opacity:.8}
+.note{margin-top:12px;font-size:12px;line-height:16px;color:var(--text-secondary)}
+</style></head><body>
+<div class="grid">
+<div class="bar" style="background:var(--success-bg)"><span class="dot" style="background:var(--success)"></span><span class="t" style="color:var(--success)">Succès</span><span class="k" style="color:var(--success)">--success</span></div>
+<div class="bar" style="background:var(--caution-bg)"><span class="dot" style="background:var(--caution)"></span><span class="t" style="color:var(--caution)">Alerte</span><span class="k" style="color:var(--caution)">--caution</span></div>
+<div class="bar" style="background:var(--critical-bg)"><span class="dot" style="background:var(--critical)"></span><span class="t" style="color:var(--critical)">Erreur</span><span class="k" style="color:var(--critical)">--critical</span></div>
+<div class="bar" style="background:var(--info-bg)"><span class="dot" style="background:var(--attention)"></span><span class="t" style="color:var(--attention)">Information</span><span class="k" style="color:var(--attention)">--attention</span></div>
+</div>
+<div class="note"><b style="color:var(--critical)">--critical (rouge)</b> is reserved for a real anomaly — speed&nbsp;&lt;&nbsp;1.0x, a failed session, a reconnection — never decoration. Status always pairs color with a shape/icon and text (§9).</div>
+</body></html>

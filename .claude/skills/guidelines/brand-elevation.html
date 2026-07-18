@@ -1,0 +1,19 @@
+<!-- @dsCard group="Brand" viewport="700x210" name="Elevation & materials" subtitle="Flat cards (stroke) · flyout / dialog shadows · Mica & Acrylic" -->
+<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css"><style>
+html,body{margin:0}body{background:var(--bg-base);color:var(--text-primary);font-family:var(--font-sans);padding:20px}
+.row{display:flex;gap:18px;align-items:center}
+.tile{width:150px;height:84px;border-radius:var(--radius-overlay);background:var(--bg-quarternary);display:flex;align-items:flex-end;padding:10px;font-size:11px;color:var(--text-secondary);box-sizing:border-box}
+.stroke{border:1px solid var(--stroke-card);box-shadow:var(--shadow-card)}
+.flyout{box-shadow:var(--shadow-flyout)}
+.dialog{box-shadow:var(--shadow-dialog)}
+.acrylic{background:var(--acrylic-tint);backdrop-filter:blur(20px) saturate(1.3);-webkit-backdrop-filter:blur(20px) saturate(1.3);border:1px solid var(--stroke-surface)}
+.note{margin-top:14px;font-size:12px;line-height:16px;color:var(--text-secondary)}
+</style></head><body>
+<div class="row">
+<div class="tile stroke">Card · stroke only</div>
+<div class="tile flyout">Flyout / menu</div>
+<div class="tile dialog">ContentDialog</div>
+<div class="tile acrylic">Acrylic</div>
+</div>
+<div class="note">Surfaces are separated by <b>1px strokes, not shadows</b> — cards are flat. Shadow is reserved for things that float (flyouts, dialogs). The window backdrop is <b>Mica</b>; flyouts may use <b>Acrylic</b> (translucent + blur).</div>
+</body></html>

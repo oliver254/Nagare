@@ -1,0 +1,22 @@
+<!-- @dsCard group="Brand" viewport="700x230" name="Iconography" subtitle="Segoe Fluent Icons in production; Lucide substitute on the web (flagged)" -->
+<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css"><style>
+html,body{margin:0}body{background:var(--bg-base);color:var(--text-primary);font-family:var(--font-sans);padding:18px}
+.grid{display:grid;grid-template-columns:repeat(8,1fr);gap:14px 8px}
+.cell{display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--text-primary)}
+.ico{width:22px;height:22px}
+.cap{font-size:10px;color:var(--text-tertiary);font-family:var(--font-mono)}
+.note{margin-top:16px;font-size:12px;line-height:16px;color:var(--text-secondary)}
+</style></head><body>
+<div class="grid" id="g"></div>
+<div class="note">Line icons, 2px stroke, monotone (<code style="font-family:var(--font-mono)">currentColor</code>). <b>Production Nagare uses Segoe Fluent Icons</b> (Windows system font); these Lucide glyphs are the flagged web substitute, copied into <code style="font-family:var(--font-mono)">assets/icons/</code> and inlined so they tint. No emoji, no unicode-glyph icons.</div>
+<script type="module">
+import { ICON_PATHS } from "../components/icon/icon-paths.js";
+const icons=[["gauge","Dashboard",""],["sliders-horizontal","Profils",""],["radio-tower","Channels",""],["calendar-clock","Planif.",""],["play","Démarrer",""],["circle-stop","Arrêter",""],["folder-open","Fichier",""],["plus","Nouveau",""],["pencil","Modifier",""],["trash-2","Supprimer",""],["copy","Copier",""],["terminal","Journal",""],["circle-check","Succès","var(--success)"],["triangle-alert","Alerte","var(--caution)"],["octagon-alert","Erreur","var(--critical)"],["refresh-cw","Reconnex.","var(--attention)"]];
+const g=document.getElementById("g");
+for(const [n,l,c] of icons){
+  const cell=document.createElement("div");cell.className="cell";if(c)cell.style.color=c;
+  cell.innerHTML=`<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[n]||""}</svg><span class="cap">${l}</span>`;
+  g.appendChild(cell);
+}
+</script>
+</body></html>

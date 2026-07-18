@@ -1,0 +1,10 @@
+/* ============================================================================
+   Nagare Design System — global stylesheet entry point.
+   Consumers link THIS one file. It is a manifest of @imports only; every token
+   and @font-face rule lives in the imported files. Do not add rules here.
+   ============================================================================ */
+@import "tokens/colors.css";
+@import "tokens/typography.css";
+@import "tokens/spacing.css";
+@import "tokens/elevation.css";
+@import "components/nagare-components.css";

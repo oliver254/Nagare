@@ -1,0 +1,19 @@
+<!-- @dsCard group="Brand" viewport="700x200" name="Motion" subtitle="Fluent easing & duration — functional, reduced-motion aware" -->
+<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css"><style>
+html,body{margin:0}body{background:var(--bg-base);color:var(--text-primary);font-family:var(--font-sans);padding:18px}
+.track{position:relative;height:10px;background:var(--control-fill-secondary);border-radius:999px;margin:6px 0 2px}
+.dot{position:absolute;top:-3px;left:0;width:16px;height:16px;border-radius:50%;background:var(--accent-fill);animation:slide 2.4s infinite alternate}
+.r2 .dot{animation-timing-function:var(--ease-decel)}
+.r1 .dot{animation-timing-function:var(--ease-standard)}
+.r3 .dot{animation-timing-function:var(--ease-accel)}
+@keyframes slide{from{left:0}to{left:calc(100% - 16px)}}
+.lbl{font-family:var(--font-mono);font-size:11px;color:var(--text-secondary)}
+.durs{display:flex;gap:18px;margin-top:12px;font-size:12px;color:var(--text-secondary)}
+.durs b{color:var(--text-primary);font-family:var(--font-mono)}
+@media (prefers-reduced-motion: reduce){.dot{animation:none;left:calc(100% - 16px)}}
+</style></head><body>
+<div class="r1"><div class="lbl">--ease-standard · point-to-point</div><div class="track"><div class="dot"></div></div></div>
+<div class="r2"><div class="lbl">--ease-decel · enter / expand</div><div class="track"><div class="dot"></div></div></div>
+<div class="r3"><div class="lbl">--ease-accel · exit / collapse</div><div class="track"><div class="dot"></div></div></div>
+<div class="durs"><span>fast <b>150ms</b></span><span>normal <b>250ms</b></span><span>slow <b>333ms</b></span></div>
+</body></html>

@@ -1,0 +1,18 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Accent ramp" subtitle="System accent (Windows default blue) — the one highlight per screen" -->
+<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css"><style>
+html,body{margin:0}body{background:var(--bg-base);font-family:var(--font-sans);color:var(--text-primary);padding:16px}
+.sw{display:flex;border-radius:var(--radius-control);overflow:hidden;border:1px solid var(--stroke-card)}
+.sw>div{flex:1;height:60px;display:flex;align-items:flex-end;padding:6px;font-size:11px;font-family:var(--font-mono)}
+.lab{margin-top:10px;font-size:12px;line-height:16px;color:var(--text-secondary)}
+</style></head><body>
+<div class="sw">
+<div style="background:var(--accent-dark-3);color:#fff">D3</div>
+<div style="background:var(--accent-dark-2);color:#fff">D2</div>
+<div style="background:var(--accent-dark-1);color:#fff">D1</div>
+<div style="background:var(--accent-base);color:#fff">Base · #0078D4</div>
+<div style="background:var(--accent-light-1);color:#000">L1</div>
+<div style="background:var(--accent-light-2);color:#000">L2</div>
+<div style="background:var(--accent-light-3);color:#000">L3</div>
+</div>
+<div class="lab"><code style="font-family:var(--font-mono)">--accent-fill</code> tints the single primary button per screen (Von Restorff). Nagare follows the user's <b>system</b> accent; this default blue ships as the reference. Light theme uses Dark-1 (white text); dark theme uses Light-2 (black text).</div>
+</body></html>

@@ -1,0 +1,24 @@
+<!-- @dsCard group="Colors" viewport="700x200" name="Dark theme" subtitle="The same tokens under .theme-dark — light, dark & high-contrast must all be correct" -->
+<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css"><style>
+html,body{margin:0}body{margin:0}
+.theme-dark{background:var(--bg-base);color:var(--text-primary);font-family:var(--font-sans);padding:18px;min-height:100vh;box-sizing:border-box}
+.card{background:var(--surface-card);border:1px solid var(--stroke-card);border-radius:var(--radius-overlay);padding:14px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.chip{height:28px;padding:0 12px;display:inline-flex;align-items:center;gap:8px;border-radius:999px;font-size:13px;font-weight:600}
+.btn{height:32px;padding:0 14px;border-radius:var(--radius-control);border:none;background:var(--accent-fill);color:var(--text-on-accent);font-family:var(--font-sans);font-size:14px}
+.dot{width:9px;height:9px;border-radius:50%}
+.sec{margin-top:8px;color:var(--text-secondary);font-size:13px}
+</style></head><body class="theme-dark">
+<div class="card">
+<div class="row" style="justify-content:space-between">
+<div><div style="font-size:15px;font-weight:600">Tableau de bord</div><div class="sec">Le thème sombre suit le système Windows.</div></div>
+<button class="btn">Démarrer</button>
+</div>
+<div class="row" style="margin-top:14px">
+<span class="chip" style="background:var(--critical-bg);color:var(--critical)"><span class="dot" style="background:var(--critical)"></span>En direct</span>
+<span class="chip" style="background:var(--success-bg);color:var(--success)">En cours · sain</span>
+<span class="chip" style="background:var(--info-bg);color:var(--attention)">Reconnexion…</span>
+<span class="chip" style="background:var(--control-fill-secondary);color:var(--text-secondary)">Aucune session</span>
+</div>
+</div>
+</body></html>

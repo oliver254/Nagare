@@ -1,0 +1,14 @@
+<!-- @dsCard group="Spacing" viewport="700x180" name="Control metrics" subtitle="Standard 32 · nav item 40 · 32px minimum target (Fitts)" -->
+<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css"><style>
+html,body{margin:0}body{background:var(--bg-base);color:var(--text-primary);font-family:var(--font-sans);padding:18px}
+.row{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.demo{display:flex;align-items:center;justify-content:center;background:var(--control-fill);border:1px solid var(--stroke-control-secondary);border-radius:var(--radius-control);font-size:12px;color:var(--text-secondary);padding:0 14px}
+.note{margin-top:14px;font-size:12px;line-height:16px;color:var(--text-secondary)}
+</style></head><body>
+<div class="row">
+<div class="demo" style="height:24px">24 · small</div>
+<div class="demo" style="height:32px">32 · standard control</div>
+<div class="demo" style="height:40px">40 · nav item / large</div>
+</div>
+<div class="note">No clickable target drops below <b>32&nbsp;px</b> (<code style="font-family:var(--font-mono)">--min-target</code>, Fitts's Law). Primary actions sit large, at the end of the configuration flow; destructive actions never sit beside them. Nav pane 280&nbsp;px expanded, 48&nbsp;px collapsed.</div>
+</body></html>

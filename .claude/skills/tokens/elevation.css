@@ -1,0 +1,45 @@
+/* ============================================================================
+   Nagare — Elevation, materials & motion tokens
+   ----------------------------------------------------------------------------
+   Fluent surfaces are mostly FLAT: cards read as bounded regions via a 1px
+   stroke, not a drop shadow. Shadow is reserved for things that truly float
+   above the page — flyouts, tooltips, and dialogs (ContentDialog).
+
+   Materials: the window uses MICA (an opaque, desktop-tinted material). Flyouts
+   and the command bar can use ACRYLIC (translucent + blur). On the web we
+   approximate these with a tint + backdrop-filter.
+   ============================================================================ */
+
+:root {
+  /* ---- Elevation / shadow ---- */
+  --shadow-none: none;
+  --shadow-card: none;                                   /* cards use stroke, not shadow */
+  --shadow-tooltip: 0 4px 8px rgba(0, 0, 0, 0.14);
+  --shadow-flyout: 0 8px 16px rgba(0, 0, 0, 0.14);       /* menus, combo popups */
+  --shadow-dialog: 0 32px 64px rgba(0, 0, 0, 0.1875),
+    0 2px 21px rgba(0, 0, 0, 0.13);                      /* ContentDialog */
+
+  /* ---- Materials ---- */
+  --material-mica: var(--bg-base);                       /* opaque window backdrop tint */
+  --acrylic-tint: rgba(252, 252, 252, 0.85);
+  --acrylic-blur: 30px;
+  --acrylic-saturation: 1.25; /* @kind other */
+
+  /* ---- Motion — Fluent easing curves & durations. standard = point-to-point;
+     decel = enter/expand; accel = exit/collapse. Durations 150 / 250 / 333 ms. ---- */
+  --ease-standard: cubic-bezier(0.8, 0, 0.2, 1); /* @kind other */
+  --ease-decel: cubic-bezier(0.1, 0.9, 0.2, 1); /* @kind other */
+  --ease-accel: cubic-bezier(0.7, 0, 1, 0.5); /* @kind other */
+  --dur-fast: 150ms; /* @kind other */
+  --dur-normal: 250ms; /* @kind other */
+  --dur-slow: 333ms; /* @kind other */
+}
+
+.theme-dark {
+  --shadow-tooltip: 0 4px 8px rgba(0, 0, 0, 0.26);
+  --shadow-flyout: 0 8px 16px rgba(0, 0, 0, 0.26);
+  --shadow-dialog: 0 32px 64px rgba(0, 0, 0, 0.37), 0 2px 21px rgba(0, 0, 0, 0.28);
+  --acrylic-tint: rgba(44, 44, 44, 0.85);
+}
+
+
