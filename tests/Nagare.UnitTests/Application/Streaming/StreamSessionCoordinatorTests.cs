@@ -21,7 +21,9 @@ namespace Nagare.UnitTests.Application.Streaming;
 /// <list type="bullet">
 /// <item>a stop mid-backoff is served immediately and NO ffmpeg is relaunched afterwards (SPEC §5);</item>
 /// <item>a stats line flushed by an already dead process is discarded (stale epoch), so it cannot
-/// fake a recovery and refill the attempt budget.</item>
+/// fake a recovery and refill the attempt budget;</item>
+/// <item>the deadline of a bounded broadcast (ADR-0009) SURVIVES a reconnection and wins over the
+/// backoff, while a manual stop wins over the deadline.</item>
 /// </list>
 /// </summary>
 public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
@@ -109,7 +111,7 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
         var id = _coordinator.Current!.Id;
 
         await Assert.ThrowsAsync<DomainException>(
-            () => _coordinator.StartAsync(_profileId, _channelId, InputFile, CancellationToken.None));
+            () => _coordinator.StartAsync(_profileId, _channelId, InputFile, null, CancellationToken.None));
 
         Assert.Equal(1, _runners.CreateCount);          // no second ffmpeg
         Assert.Equal(0, runner.DisposeCallCount);       // and the live one was not torn down
@@ -121,7 +123,7 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
     public async Task StartAsync_UnknownProfile_ThrowsDomainExceptionAndStartsNoFfmpeg()
     {
         await Assert.ThrowsAsync<DomainException>(
-            () => _coordinator.StartAsync(ProfileId.New(), _channelId, InputFile, CancellationToken.None));
+            () => _coordinator.StartAsync(ProfileId.New(), _channelId, InputFile, null, CancellationToken.None));
 
         Assert.Equal(0, _runners.CreateCount);
         Assert.False(_coordinator.HasActiveSession);
@@ -131,7 +133,7 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
     public async Task StartAsync_UnknownChannel_ThrowsDomainExceptionAndStartsNoFfmpeg()
     {
         await Assert.ThrowsAsync<DomainException>(
-            () => _coordinator.StartAsync(_profileId, ChannelId.New(), InputFile, CancellationToken.None));
+            () => _coordinator.StartAsync(_profileId, ChannelId.New(), InputFile, null, CancellationToken.None));
 
         Assert.Equal(0, _runners.CreateCount);
         Assert.False(_coordinator.HasActiveSession);
@@ -479,6 +481,7 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
         Assert.Equal(1, runner.StopCallCount);
         Assert.Equal(1, runner.DisposeCallCount);
         Assert.Equal(SessionStatus.Stopped, _coordinator.Current!.Status);
+        Assert.Equal(SessionStopReason.Manual, _coordinator.Current!.StopReason);
         Assert.False(_coordinator.HasActiveSession);
     }
 
@@ -554,6 +557,212 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
 
         Assert.Equal(1, _runners.Runner(1).DisposeCallCount);   // ffmpeg killed despite the stuck loop
         await start.WaitAsync(Budget);                          // and the caller is never left hanging
+    }
+
+    // ----------------------------------------------------------------- maximum duration
+    //
+    // US-0 / ADR-0009. The deadline is armed OUTSIDE the loop on the fake clock, exactly like the
+    // backoff: no test below waits a single real millisecond, even for a 48-hour window.
+
+    [Fact]
+    public async Task DurationLimit_WhenNoDurationWasGiven_NeverStopsTheSession()
+    {
+        // A broadcast without a limit is the path of today, untouched: no deadline, no message.
+        await StartRunningAsync();
+
+        Assert.Null(_coordinator.Current!.PlannedEndsAt);
+
+        _time.Advance(TimeSpan.FromHours(48));
+        await FlushAsync();
+
+        Assert.Equal(SessionStatus.Running, _coordinator.Current!.Status);
+        Assert.Null(_coordinator.Current!.PlannedEndsAt);
+        Assert.Equal(1, _runners.CreateCount);
+    }
+
+    [Fact]
+    public async Task StartAsync_WithAMaxDuration_PublishesThePlannedEndFromTheVeryFirstSnapshot()
+    {
+        // US-0 asks for an end time to be DISPLAYED. It must ride on the first snapshot: waiting for
+        // the next transition would leave a bounded broadcast with no end in sight on screen.
+        var snapshots = new List<SessionSnapshot>();
+        _coordinator.Changed += snapshots.Add;
+
+        var launchedAt = _time.GetUtcNow();
+        await StartAsync(TimeSpan.FromHours(2));
+
+        Assert.Equal(launchedAt + TimeSpan.FromHours(2), snapshots[0].PlannedEndsAt);
+        Assert.Equal(launchedAt + TimeSpan.FromHours(2), _coordinator.Current!.PlannedEndsAt);
+    }
+
+    [Fact]
+    public async Task DurationLimit_JustBeforeTheDeadline_LeavesTheBroadcastOnAir()
+    {
+        await StartRunningAsync(TimeSpan.FromSeconds(10));
+
+        _time.Advance(TimeSpan.FromSeconds(10) - TimeSpan.FromMilliseconds(1));
+        await FlushAsync();
+
+        Assert.Equal(SessionStatus.Running, _coordinator.Current!.Status);
+        Assert.Null(_coordinator.Current!.StopReason);
+    }
+
+    [Fact]
+    public async Task DurationLimit_WhenTheDeadlineElapsesWhileRunning_StopsTheSessionAndKillsFfmpeg()
+    {
+        var runner = await StartRunningAsync(TimeSpan.FromSeconds(10));
+
+        _time.Advance(TimeSpan.FromSeconds(10));
+        await WaitForStatusAsync(SessionStatus.Stopped);
+
+        // Same ending as a manual stop — only the label differs, and it is what the UI reports as
+        // "arrêt automatique (durée atteinte)".
+        Assert.Equal(SessionStopReason.DurationElapsed, _coordinator.Current!.StopReason);
+        Assert.Equal(1, runner.StopCallCount);
+        Assert.Equal(1, runner.DisposeCallCount);
+        Assert.False(_coordinator.HasActiveSession);
+    }
+
+    [Fact]
+    public async Task DurationLimit_WhenTheDeadlineElapsesWhileReconnecting_AbandonsTheBackoff()
+    {
+        // Arbitrage D. The deadline falls one second BEFORE the pending relaunch: the backoff is
+        // abandoned and no ffmpeg is ever put back on air. The user asked for one second of
+        // broadcast; retrying past it contradicts the only instruction they gave.
+        var runner = await StartRunningAsync(TimeSpan.FromSeconds(1));
+
+        runner.EmitExit(1);
+        await WaitForArmedBackoffAsync(attempts: 1);   // relaunch due at t0 + 2s
+
+        _time.Advance(TimeSpan.FromSeconds(1));
+        await WaitForStatusAsync(SessionStatus.Stopped);
+
+        Assert.Equal(SessionStopReason.DurationElapsed, _coordinator.Current!.StopReason);
+
+        // Well past every backoff window: the abandoned attempt must never come back.
+        _time.Advance(TimeSpan.FromMinutes(10));
+        await FlushAsync();
+
+        Assert.Equal(1, _runners.CreateCount);
+        Assert.False(_coordinator.HasActiveSession);
+    }
+
+    [Fact]
+    public async Task DurationLimit_AfterAReconnection_StillStopsAtTheOriginalDeadline()
+    {
+        // THE test that rejects an epoch-tagged deadline. The epoch is a RUNNER generation and
+        // changes at every ffmpeg exit: tagged with it, this message would be declared stale from
+        // the first reconnection on, and the automatic stop would simply never happen.
+        var runner = await StartRunningAsync(TimeSpan.FromSeconds(6));
+
+        runner.EmitExit(1);
+        await WaitForArmedBackoffAsync(attempts: 1);
+
+        _time.Advance(TimeSpan.FromSeconds(2));
+        await WaitUntilAsync(() => _runners.CreateCount == 2, "ffmpeg to be relaunched");
+
+        _runners.Runner(2).EmitStats(Stats());
+        await WaitForStatusAsync(SessionStatus.Running);   // recovered, under a NEW epoch
+
+        _time.Advance(TimeSpan.FromSeconds(4));            // t0 + 6s: the deadline of the LAUNCH
+        await WaitForStatusAsync(SessionStatus.Stopped);
+
+        Assert.Equal(SessionStopReason.DurationElapsed, _coordinator.Current!.StopReason);
+    }
+
+    [Fact]
+    public async Task StopAsync_BeforeTheDeadline_StopsManuallyAndKeepsThatReason()
+    {
+        // "Stopping before the end time works as it does today" (US-0): the duration prevents
+        // nothing, and the report says the user stopped it — not the clock.
+        var runner = await StartRunningAsync(TimeSpan.FromHours(2));
+
+        await _coordinator.StopAsync(CancellationToken.None);
+
+        Assert.Equal(SessionStopReason.Manual, _coordinator.Current!.StopReason);
+
+        _time.Advance(TimeSpan.FromHours(3));   // past the deadline of a session that is already over
+        await FlushAsync();
+
+        Assert.Equal(SessionStatus.Stopped, _coordinator.Current!.Status);
+        Assert.Equal(SessionStopReason.Manual, _coordinator.Current!.StopReason);
+        Assert.Equal(1, runner.StopCallCount);
+    }
+
+    [Fact]
+    public async Task DurationLimit_OnASessionThatAlreadyFailed_IsIgnoredWithoutAnyError()
+    {
+        // EndSessionAsync cancels the deadline, but not before the runner is reaped — and killing a
+        // process can take a while. A deadline elapsing inside that window has ALREADY posted its
+        // message. Without the freshness guard, Stop() on a terminal session throws a
+        // DomainException all the way up to the loop's last-resort catch: this is that window,
+        // reproduced deterministically by holding the loop inside the dispose.
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _runners.Configure = (runner, _) => runner.DisposeBlocker = gate.Task;
+
+        var duration = TimeSpan.FromSeconds(10);
+        await StartAsync(duration);
+
+        _runners.Runner(1).EmitExit(1);                     // dies while Starting -> Failed, no backoff
+        await WaitForStatusAsync(SessionStatus.Failed);
+        await _runners.Runner(1).DisposeEntered.WaitAsync(Budget);   // the loop is now held
+
+        _time.Advance(duration);                            // DurationElapsed is queued behind it
+        gate.SetResult();
+
+        await FlushAsync();
+
+        var current = _coordinator.Current!;
+        Assert.Equal(SessionStatus.Failed, current.Status);
+        Assert.Contains("code 1", current.LastError!, StringComparison.Ordinal);
+        Assert.Null(current.StopReason);                    // a failure is not a stop
+        Assert.DoesNotContain(_logger.Messages, m => m.Contains("Unhandled error", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-3600)]
+    public async Task StartAsync_WithANonPositiveMaxDuration_IsRefusedAndStartsNoFfmpeg(int seconds)
+    {
+        // The bound is a domain invariant, not a preflight rule: it is checked before anything is
+        // launched, so an impossible window never puts a single frame on air.
+        await Assert.ThrowsAsync<DomainException>(() => StartAsync(TimeSpan.FromSeconds(seconds)));
+
+        Assert.Equal(0, _runners.CreateCount);
+        Assert.False(_coordinator.HasActiveSession);
+    }
+
+    [Fact]
+    public async Task StopAsync_WithADurationElapsedAlreadyQueued_KeepsTheManualReason()
+    {
+        // Barrier 3, on the automatic stop this time: the deadline elapses JUST before the stop is
+        // posted, so its message sits AHEAD of it in the FIFO, and the session is still active. The
+        // broadcast ends either way — what is at stake is the LABEL, and it belongs to whoever
+        // clicked. The log assertion is what proves the barrier fired: "the session is Stopped" is
+        // true with or without it.
+        //
+        // Determinism: the loop is held inside the runner's start, so it cannot consume the mailbox
+        // while the test arranges exactly the queue it wants — [DurationElapsed, Stop].
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _runners.Configure = (runner, _) => runner.StartBlocker = gate.Task;
+
+        var duration = TimeSpan.FromSeconds(10);
+        var start = StartAsync(duration);                            // deadline armed, then held
+
+        await WaitUntilAsync(() => _runners.CreateCount == 1, "ffmpeg to be launched");
+        await _runners.Runner(1).StartEntered.WaitAsync(Budget);
+
+        _time.Advance(duration);                                     // DurationElapsed written now
+
+        var stop = _coordinator.StopAsync(CancellationToken.None);   // cancels, THEN posts behind it
+        gate.SetResult();                                            // the loop resumes: deadline first
+
+        await start.WaitAsync(Budget);
+        await stop.WaitAsync(Budget);
+
+        Assert.Equal(1, _logger.CountOf(StreamSessionCoordinator.StopSupersededDurationLogMessage));
+        Assert.Equal(SessionStatus.Stopped, _coordinator.Current!.Status);
+        Assert.Equal(SessionStopReason.Manual, _coordinator.Current!.StopReason);
     }
 
     // --------------------------------------------------------------- monitoring & health
@@ -705,13 +914,14 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
 
     // -------------------------------------------------------------------------- helpers
 
-    private Task<SessionId> StartAsync()
-        => _coordinator.StartAsync(_profileId, _channelId, InputFile, CancellationToken.None);
+    /// <param name="maxDuration">Null = the unbounded broadcast: no deadline is armed at all.</param>
+    private Task<SessionId> StartAsync(TimeSpan? maxDuration = null)
+        => _coordinator.StartAsync(_profileId, _channelId, InputFile, maxDuration, CancellationToken.None);
 
     /// <summary>Starts a session and brings it to <see cref="SessionStatus.Running"/> via a first stats line.</summary>
-    private async Task<FakeFfmpegProcessRunner> StartRunningAsync()
+    private async Task<FakeFfmpegProcessRunner> StartRunningAsync(TimeSpan? maxDuration = null)
     {
-        await StartAsync();
+        await StartAsync(maxDuration);
 
         var runner = _runners.Runner(1);
         runner.EmitStats(Stats());
@@ -811,7 +1021,7 @@ public sealed class StreamSessionCoordinatorTests : IAsyncLifetime
     {
         if (_coordinator.HasActiveSession)
             await Assert.ThrowsAsync<DomainException>(
-                () => _coordinator.StartAsync(ProfileId.New(), ChannelId.New(), InputFile, CancellationToken.None));
+                () => _coordinator.StartAsync(ProfileId.New(), ChannelId.New(), InputFile, null, CancellationToken.None));
         else
             await _coordinator.StopAsync(CancellationToken.None);
     }

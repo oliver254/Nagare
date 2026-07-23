@@ -19,16 +19,17 @@ namespace Nagare.Application.Streaming;
 /// <see cref="ISessionMonitor"/>. Kills the ffmpeg process on application shutdown.
 ///
 /// Concurrency model (ADR-0008): a single sequential loop (mailbox), no lock. Every
-/// stimulus — caller, stderr reader thread, process exit callback, backoff timer — becomes
-/// a message posted to an unbounded single-reader <see cref="Channel{T}"/>. The loop is the
-/// ONLY writer of <see cref="_session"/>, <see cref="_runner"/>, <see cref="_command"/>,
-/// <see cref="_lastStats"/> and <see cref="_health"/>, so the aggregate is never mutated
-/// concurrently.
+/// stimulus — caller, stderr reader thread, process exit callback, backoff timer, duration
+/// deadline — becomes a message posted to an unbounded single-reader <see cref="Channel{T}"/>. The
+/// loop is the ONLY writer of <see cref="_session"/>, <see cref="_runner"/>, <see cref="_command"/>,
+/// <see cref="_lastStats"/>, <see cref="_health"/> and <see cref="_plannedEndsAt"/>, so the
+/// aggregate is never mutated concurrently.
 ///
 /// Three rules make it work:
 /// <list type="number">
-/// <item>The loop NEVER awaits the backoff. The delay is scheduled outside and reposts a
-/// <c>ReconnectDue</c> message, so a stop is processed immediately even mid-backoff (SPEC §5).</item>
+/// <item>The loop NEVER awaits a delay. Both the backoff and the duration deadline are scheduled
+/// outside and repost a message (<c>ReconnectDue</c>, <c>DurationElapsed</c>), so a stop is
+/// processed immediately even mid-backoff (SPEC §5).</item>
 /// <item>Every runner runs under an increasing epoch. Its events carry that epoch, and the
 /// loop discards any message whose epoch is stale — a stats line flushed by a process that
 /// is already dead can no longer trigger a false recovery.</item>
@@ -51,6 +52,16 @@ public sealed class StreamSessionCoordinator
     /// out to pass for the wrong reason under an innocuous-looking reorder of the exit handler.
     /// </summary>
     internal const string StopAbortedReconnectLogMessage = "Reconnection abandoned: a stop has been requested.";
+
+    /// <summary>
+    /// Same barrier, same reason, on the automatic stop: the deadline elapsed just before a manual
+    /// stop was posted, so its message sits AHEAD of it in the FIFO. The user's stop keeps the hand
+    /// AND the label. Internal for the same reason as above: the guard test asserts this exact
+    /// message to prove the barrier actually fired, since "the session ended up Stopped" is true
+    /// either way.
+    /// </summary>
+    internal const string StopSupersededDurationLogMessage =
+        "Automatic stop abandoned: a manual stop has been requested.";
 
     /// <summary>How long <see cref="DisposeAsync"/> waits for the loop before closing without it.</summary>
     private static readonly TimeSpan LoopShutdownTimeout = TimeSpan.FromSeconds(5);
@@ -83,6 +94,14 @@ public sealed class StreamSessionCoordinator
     private FfmpegStats? _lastStats;
     private HealthIndicator _health = HealthIndicator.Ok;
     private long _epoch;
+
+    /// <summary>
+    /// When the current session is due to stop on its own; null = unbounded broadcast. The
+    /// aggregate holds the INTENTION (<see cref="StreamSession.MaxDuration"/>), this holds the
+    /// INSTANT — it is computed here because this is where the <see cref="TimeProvider"/> is
+    /// (ADR-0009 §1).
+    /// </summary>
+    private DateTimeOffset? _plannedEndsAt;
 
     /// <summary>
     /// Assigned by the loop only, but CANCELLED from the caller thread too (see <see cref="StopAsync"/>).
@@ -141,10 +160,15 @@ public sealed class StreamSessionCoordinator
 
     // ------------------------------------------------------------------ public API
 
-    public async Task<SessionId> StartAsync(ProfileId profileId, ChannelId channelId, string inputFilePath, CancellationToken ct)
+    public async Task<SessionId> StartAsync(
+        ProfileId profileId,
+        ChannelId channelId,
+        string inputFilePath,
+        TimeSpan? maxDuration,
+        CancellationToken ct)
     {
         var completion = new TaskCompletionSource<SessionId>(TaskCreationOptions.RunContinuationsAsynchronously);
-        Post(new StartRequested(profileId, channelId, inputFilePath, ct, completion));
+        Post(new StartRequested(profileId, channelId, inputFilePath, maxDuration, ct, completion));
 
         return await completion.Task.WaitAsync(ct);
     }
@@ -172,9 +196,10 @@ public sealed class StreamSessionCoordinator
     }
 
     /// <summary>
-    /// Cancels the pending backoff of the current session. Callable from any thread. The source may
-    /// be disposed concurrently by the loop ending the session — in which case there is, by
-    /// definition, no delay left to cancel.
+    /// Cancels every delay pending on the current session — the backoff AND the duration deadline,
+    /// both armed on the same source. Callable from any thread. The source may be disposed
+    /// concurrently by the loop ending the session — in which case there is, by definition, no
+    /// delay left to cancel.
     /// </summary>
     private void CancelSessionDelays()
     {
@@ -213,6 +238,9 @@ public sealed class StreamSessionCoordinator
                     case ReconnectDue due:
                         await HandleReconnectDueAsync(due);
                         break;
+                    case DurationElapsed elapsed:
+                        await HandleDurationElapsedAsync(elapsed);
+                        break;
                 }
             }
             catch (Exception ex)
@@ -248,7 +276,9 @@ public sealed class StreamSessionCoordinator
                 ?? throw new DomainException($"Channel {message.ChannelId} not found.");
 
             var command = _commandBuilder.Build(profile, channel, message.InputFilePath);
-            session = StreamSession.Launch(message.ProfileId, message.ChannelId, message.InputFilePath, _reconnectSettings.ToPolicy());
+            session = StreamSession.Launch(
+                message.ProfileId, message.ChannelId, message.InputFilePath,
+                _reconnectSettings.ToPolicy(), message.MaxDuration);
 
             ClearLogs();                       // a new session never shows the previous one's lines
             _lastStats = null;
@@ -257,7 +287,17 @@ public sealed class StreamSessionCoordinator
             _sessionCts = new CancellationTokenSource();
             _session = session;
 
+            // "Now + N", as US-0 promises: the clock starts at the launch, not when ffmpeg finally
+            // produces its first stats — the startup time is part of the window the user asked for.
+            // Null RESETS the field, so an unbounded session never inherits the previous end time.
+            _plannedEndsAt = session.MaxDuration is { } duration ? _time.GetUtcNow() + duration : null;
+
             var epoch = ++_epoch;
+
+            // Armed BEFORE the first drain: the very first snapshot the UI receives must already
+            // carry the end time, otherwise the page shows a bounded broadcast with no end in sight
+            // until the next transition.
+            ScheduleDurationLimit(session);
             DrainEvents(session);
 
             await StartRunnerAsync(command, epoch, message.Ct);
@@ -294,32 +334,7 @@ public sealed class StreamSessionCoordinator
 
         try
         {
-            // Barrier 1: cancels the pending backoff delay, so its ReconnectDue is never posted.
-            // Already done by StopAsync before posting (Cancel is idempotent); repeated here so a
-            // stop message alone carries the full contract, whoever posts it.
-            CancelSessionDelays();
-
-            // Barrier 2: every message already in flight (including a ReconnectDue that just
-            // won the race) becomes stale. No ffmpeg can be relaunched after a stop.
-            _epoch++;
-
-            var runner = _runner?.Runner;
-            if (runner is not null)
-            {
-                try
-                {
-                    await runner.StopAsync(GracePeriod, message.Ct);
-                }
-                catch (Exception ex)
-                {
-                    // The process is killed anyway when the runner is disposed below.
-                    _logger.LogWarning(ex, "Error while stopping the ffmpeg runner.");
-                }
-            }
-
-            session.Stop();
-            DrainEvents(session);
-            await EndSessionAsync();
+            await StopSessionAsync(session, SessionStopReason.Manual, message.Ct);
 
             message.Completion.TrySetResult();
         }
@@ -331,6 +346,47 @@ public sealed class StreamSessionCoordinator
             await EndSessionAsync();
             message.Completion.TrySetException(surfaced);
         }
+    }
+
+    /// <summary>
+    /// The ONE way a session ends on purpose, whoever asked — the user or the deadline. Both paths
+    /// share it so they apply the same barriers BY CONSTRUCTION rather than by discipline: the day
+    /// a third reason to stop appears, it inherits them for free (ADR-0009 §3).
+    ///
+    /// The caller owns the error handling: <see cref="HandleStopAsync"/> must answer its caller,
+    /// <see cref="HandleDurationElapsedAsync"/> has nobody waiting and lets the loop's last-resort
+    /// catch deal with it.
+    /// </summary>
+    private async Task StopSessionAsync(StreamSession session, SessionStopReason reason, CancellationToken ct)
+    {
+        // Barrier 1: cancels the pending delays, so neither the backoff's ReconnectDue nor the
+        // deadline's DurationElapsed is ever posted. Already done by StopAsync before posting
+        // (Cancel is idempotent); repeated here so a stop carries the full contract, whoever posts
+        // it. THIS is also what abandons the backoff when the deadline lands mid-reconnection: the
+        // user asked for N hours, retrying past them contradicts that (arbitrage D).
+        CancelSessionDelays();
+
+        // Barrier 2: every message already in flight (including a ReconnectDue that just
+        // won the race) becomes stale. No ffmpeg can be relaunched after a stop.
+        _epoch++;
+
+        var runner = _runner?.Runner;
+        if (runner is not null)
+        {
+            try
+            {
+                await runner.StopAsync(GracePeriod, ct);
+            }
+            catch (Exception ex)
+            {
+                // The process is killed anyway when the runner is disposed below.
+                _logger.LogWarning(ex, "Error while stopping the ffmpeg runner.");
+            }
+        }
+
+        session.Stop(reason);
+        DrainEvents(session);
+        await EndSessionAsync();
     }
 
     private void HandleStats(StatsReceived message)
@@ -464,6 +520,35 @@ public sealed class StreamSessionCoordinator
     }
 
     /// <summary>
+    /// The deadline of a bounded broadcast has arrived. Same ending as a manual stop, with the
+    /// user's own reason attached (ADR-0009 §3).
+    /// </summary>
+    private async Task HandleDurationElapsedAsync(DurationElapsed message)
+    {
+        var session = _session;
+
+        // Freshness guard, at SESSION scale — the epoch would be the wrong yardstick here, see
+        // ScheduleDurationLimit. It is NOT decorative: EndSessionAsync cancels the deadline, but a
+        // delay that elapses WHILE the process is being killed has already posted its message, and
+        // Stop() on a terminal session throws all the way up to the loop's last-resort catch.
+        if (session is null || session.Id != message.SessionId || !session.Status.IsActive())
+            return;
+
+        if (_sessionCts?.IsCancellationRequested is true)
+        {
+            // Barrier 3, exactly as for a relaunch: the delay elapsed just BEFORE the stop was
+            // posted, so this message is ahead of it in the FIFO. The user's stop is on its way; it
+            // keeps the hand and the label. The broadcast ends either way — only the wording of the
+            // report is at stake, and it belongs to whoever clicked.
+            _logger.LogInformation(StopSupersededDurationLogMessage);
+            return;
+        }
+
+        _logger.LogInformation("Maximum duration reached: stopping the session.");
+        await StopSessionAsync(session, SessionStopReason.DurationElapsed, CancellationToken.None);
+    }
+
+    /// <summary>
     /// Plans the backoff OUTSIDE the loop: awaiting it inside would make the loop deaf to a
     /// stop request for up to the whole backoff window, which is precisely the defect this
     /// design removes (ADR-0008). The delay simply reposts a message.
@@ -491,6 +576,43 @@ public sealed class StreamSessionCoordinator
         _ = Task.Delay(delay, _time, cts.Token)
             .ContinueWith(
                 _ => _mailbox.Writer.TryWrite(new ReconnectDue(epoch)),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+    }
+
+    /// <summary>
+    /// Arms the automatic stop of a bounded session, on the very pattern of
+    /// <see cref="ScheduleReconnect"/>: outside the loop, on the session token, reposting a message.
+    /// An unbounded session arms NOTHING — its path stays exactly the one it is today.
+    ///
+    /// The message carries the <b>SessionId, never the epoch</b>, and that is the crux of ADR-0009.
+    /// The epoch is a RUNNER generation: it changes at every ffmpeg exit, every stop, every end of
+    /// session. A deadline armed at launch and tagged with the epoch would be declared stale as soon
+    /// as the first reconnection happened — the automatic stop would never fire, precisely in the
+    /// case arbitrage D exists for. The SessionId is stable for the whole life of the session.
+    /// </summary>
+    private void ScheduleDurationLimit(StreamSession session)
+    {
+        if (session.MaxDuration is not { } duration)
+            return;
+
+        var cts = _sessionCts;
+        if (cts is null)
+        {
+            _logger.LogError("Cannot schedule the duration limit without an active session.");
+            return;
+        }
+
+        var sessionId = session.Id;
+
+        _logger.LogInformation("Automatic stop scheduled in {Duration}.", duration);
+
+        // ExecuteSynchronously for the same reason as the backoff: the continuation only drops a
+        // message into the mailbox.
+        _ = Task.Delay(duration, _time, cts.Token)
+            .ContinueWith(
+                _ => _mailbox.Writer.TryWrite(new DurationElapsed(sessionId)),
                 CancellationToken.None,
                 TaskContinuationOptions.OnlyOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
                 TaskScheduler.Default);
@@ -550,13 +672,21 @@ public sealed class StreamSessionCoordinator
     /// <summary>
     /// Ends the session lifecycle: invalidates the epoch, disposes the runner AND the session
     /// CTS — which used to leak, being overwritten at the next start instead of disposed. The
-    /// session itself is kept in its terminal state so the UI can still display it.
+    /// session itself is kept in its terminal state so the UI can still display it, and so is
+    /// <see cref="_plannedEndsAt"/> (same stance as <see cref="_lastStats"/>): the finished
+    /// broadcast stays readable, the next start overwrites it.
     /// </summary>
     private async Task EndSessionAsync()
     {
         _epoch++;
 
         await CleanupRunnerAsync();
+
+        // CANCELLED before being disposed: a session that ends before its deadline — a failed
+        // launch, a manual stop, an exhausted budget — would otherwise leave a Task.Delay of up to
+        // 24 hours in flight for nothing. The SessionId already made that timer harmless; it
+        // remained a leak in an application that can run for days.
+        CancelSessionDelays();
 
         _sessionCts?.Dispose();
         _sessionCts = null;
@@ -699,7 +829,9 @@ public sealed class StreamSessionCoordinator
             _lastStats,
             _health,
             session.ReconnectAttempts,
-            session.LastError);
+            session.LastError,
+            _plannedEndsAt,
+            session.StopReason);
 
     /// <summary>
     /// Warning when ffmpeg falls behind real time OR when the drop counter grows since the
@@ -777,6 +909,7 @@ public sealed class StreamSessionCoordinator
         ProfileId ProfileId,
         ChannelId ChannelId,
         string InputFilePath,
+        TimeSpan? MaxDuration,
         CancellationToken Ct,
         TaskCompletionSource<SessionId> Completion) : CoordinatorMessage;
 
@@ -789,6 +922,9 @@ public sealed class StreamSessionCoordinator
     private sealed record ProcessExited(long Epoch, int ExitCode) : CoordinatorMessage;
 
     private sealed record ReconnectDue(long Epoch) : CoordinatorMessage;
+
+    /// <summary>Tagged by the SESSION, not by the runner generation — see <see cref="ScheduleDurationLimit"/>.</summary>
+    private sealed record DurationElapsed(SessionId SessionId) : CoordinatorMessage;
 
     /// <summary>A started runner with the exact delegates it was subscribed with, so they can be removed.</summary>
     private sealed record RunnerBinding(
