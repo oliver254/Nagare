@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Styles partagés de Nagare. Aucune couleur en dur : tout passe par un {ThemeResource} Fluent,
+    ce qui fait suivre le thème clair, sombre ET contraste élevé sans une ligne de plus.
+
+    Aucun BasedOn ici, volontairement : un StaticResource écrit DANS un dictionnaire fusionné se
+    résout dans la portée de ce dictionnaire, pas dans celle de l'application — référencer
+    AccentButtonStyle depuis ici planterait à l'exécution. Les styles WinUI existants sont donc
+    appliqués directement sur les contrôles, dans les pages.
+-->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Common Region : une carte ceinturée par un trait de 1 px, pas par une ombre. Les cartes
+         sont posées à plat sur le fond de page ; seul ce qui flotte (dialogue, flyout) porte une
+         ombre. -->
+    <Style x:Key="NagareCardStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{ThemeResource OverlayCornerRadius}" />
+        <Setter Property="Padding" Value="16" />
+    </Style>
+
+    <!-- Zone de dépôt : même grammaire visuelle qu'un contrôle, pas qu'une carte. -->
+    <Style x:Key="NagareDropZoneStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorSecondaryBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+        <Setter Property="Padding" Value="16" />
+        <Setter Property="MinHeight" Value="96" />
+    </Style>
+
+    <!-- Miller : les cinq statistiques deviennent cinq tuiles lisibles au lieu d'une file de nombres. -->
+    <Style x:Key="NagareStatTileStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorSecondaryBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="MinWidth" Value="104" />
+    </Style>
+
+    <!-- Fitts : l'action primaire et son opposée sont de grandes cibles, bien au-delà des 32 px. -->
+    <Style x:Key="NagarePrimaryTargetStyle" TargetType="Button">
+        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="MinWidth" Value="168" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+
+    <!-- Accessibilité §9 : un état de checklist se lit à la forme (case cochée) ET au mot. La case
+         n'est pas interactive — elle rapporte, elle ne se règle pas. -->
+    <Style x:Key="NagareChecklistItemStyle" TargetType="CheckBox">
+        <Setter Property="IsHitTestVisible" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="MinWidth" Value="0" />
+    </Style>
+
+</ResourceDictionary>

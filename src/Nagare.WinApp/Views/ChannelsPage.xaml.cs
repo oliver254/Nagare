@@ -5,7 +5,11 @@ using Nagare.ViewModels;
 
 namespace Nagare.WinApp.Views;
 
-/// <summary>Channels CRUD (plan §7, phase 4.1). Binding only — the logic lives in the ViewModel.</summary>
+/// <summary>
+/// Channels CRUD (plan §7, phase 4.1). Binding only — the logic lives in the ViewModel. The one
+/// exception is the deletion, which asks for confirmation: a <c>ContentDialog</c> needs a
+/// <c>XamlRoot</c>, and no WinUI type may enter Nagare.ViewModels.
+/// </summary>
 public sealed partial class ChannelsPage : Page
 {
     public ChannelsPage()
@@ -15,6 +19,8 @@ public sealed partial class ChannelsPage : Page
         ViewModel = App.Current.Services.GetRequiredService<ChannelsViewModel>();
 
         Loaded += OnLoaded;
+        ActualThemeChanged += OnThemeChanged;
+        Unloaded += (_, _) => ActualThemeChanged -= OnThemeChanged;
     }
 
     public ChannelsViewModel ViewModel { get; }
@@ -23,5 +29,55 @@ public sealed partial class ChannelsPage : Page
     {
         Loaded -= OnLoaded;
         await ViewModel.LoadCommand.ExecuteAsync(null);
+    }
+
+    /// <summary>
+    /// The "Aucune clé" warning takes its colour from a converter, and a brush a converter returned
+    /// does not follow a theme change on its own — see <c>ThemeBrushes</c>.
+    /// </summary>
+    private void OnThemeChanged(FrameworkElement sender, object args) => Bindings.Update();
+
+    /// <summary>One dialog at a time — see <see cref="OnDeleteRequested"/>.</summary>
+    private bool _confirming;
+
+    /// <summary>
+    /// Deleting a channel throws its stream key away with it, and the key cannot be read back from
+    /// anywhere (ADR-0005) — it would have to be fetched from the platform again. The dialog names
+    /// the channel and says so.
+    ///
+    /// <para>The guard is what keeps this <c>async void</c> handler from killing the application:
+    /// WinUI allows a single <c>ContentDialog</c> at a time and throws otherwise, and a double-click
+    /// — or the Suppr accelerator repeating under a held key — reaches here twice.</para>
+    /// </summary>
+    private async void OnDeleteRequested(object sender, RoutedEventArgs e)
+    {
+        if (_confirming || ViewModel.SelectedChannel is not { } channel)
+            return;
+
+        _confirming = true;
+
+        try
+        {
+            var dialog = new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                Title = $"Supprimer « {channel.Name} » ?",
+                Content = "Ce channel et sa clé de stream seront définitivement supprimés.",
+                PrimaryButtonText = "Supprimer",
+                CloseButtonText = "Annuler",
+                DefaultButton = ContentDialogButton.Close   // the safe answer is the one under Enter
+            };
+
+            if (await dialog.ShowAsync() is ContentDialogResult.Primary)
+                await ViewModel.DeleteCommand.ExecuteAsync(null);
+        }
+        catch (Exception ex)
+        {
+            ViewModel.ErrorMessage = $"Suppression impossible : {ex.Message}";
+        }
+        finally
+        {
+            _confirming = false;
+        }
     }
 }

@@ -169,9 +169,26 @@ public sealed class ChannelsViewModelTests
         }
     }
 
-    private static async Task<(ChannelsViewModel Vm, FakeMediator Mediator)> CreateLoadedAsync()
+    /// <summary>The first launch has no channel, and the page must say so rather than show a void.</summary>
+    [Fact]
+    public async Task A_blank_install_reports_an_empty_list()
     {
-        IReadOnlyList<ChannelDto> channels = [Existing];
+        var (vm, _) = await CreateLoadedAsync(empty: true);
+
+        Assert.True(vm.IsEmpty);
+    }
+
+    [Fact]
+    public async Task A_populated_list_is_not_empty()
+    {
+        var (vm, _) = await CreateLoadedAsync();
+
+        Assert.False(vm.IsEmpty);
+    }
+
+    private static async Task<(ChannelsViewModel Vm, FakeMediator Mediator)> CreateLoadedAsync(bool empty = false)
+    {
+        IReadOnlyList<ChannelDto> channels = empty ? [] : [Existing];
 
         var mediator = new FakeMediator()
             .Answer<GetChannelsQuery>(channels)

@@ -130,7 +130,7 @@ public sealed class DashboardViewModelTests
         monitor.RaiseChanged(Snapshot(SessionStatus.Reconnecting, fps: 30, reconnectAttempts: 1));
 
         Assert.Equal(SessionStatus.Reconnecting, vm.Status);
-        Assert.Equal("Reconnexion", vm.StatusLabel);
+        Assert.Equal("Reconnexion", vm.StatusHeadline);
         Assert.Equal(1, vm.ReconnectAttempts);
         Assert.True(vm.IsSessionActive);
         Assert.True(vm.StopCommand.CanExecute(null));
@@ -330,6 +330,291 @@ public sealed class DashboardViewModelTests
         Assert.True(vm.StartCommand.CanExecute(null));
     }
 
+    // ------------------------------------------------- a blocked start always says why (UX §5)
+    //
+    // GetStartPreflightHandlerTests proves WHICH reason is reported. What follows proves the other
+    // half of the acceptance criterion: whatever that reason is, SOMETHING is on screen. The three
+    // surfaces are disjoint by design — environment, media, hint — so the assertion is on their
+    // union, which is exactly what the user sees.
+
+    [Theory]
+    [InlineData(StartBlockReason.NotChecked)]
+    [InlineData(StartBlockReason.FfmpegMissing)]
+    [InlineData(StartBlockReason.FfprobeMissing)]
+    [InlineData(StartBlockReason.NvencUnavailable)]
+    [InlineData(StartBlockReason.SessionAlreadyActive)]
+    [InlineData(StartBlockReason.ProfileNotSelected)]
+    [InlineData(StartBlockReason.ChannelNotSelected)]
+    [InlineData(StartBlockReason.InputFileNotSelected)]
+    [InlineData(StartBlockReason.InputFileNotFound)]
+    [InlineData(StartBlockReason.InputFileUnreadable)]
+    public async Task Every_blocking_reason_puts_a_sentence_on_screen(StartBlockReason reason)
+    {
+        var (vm, _, _, _, _) = await CreateLoadedAsync();
+
+        // Cleared first, and asserted cleared: StartPreflight is a record, so assigning a verdict
+        // equal to the one already in place raises nothing and the sentences would simply be the
+        // ones left over from load — the test would pass without the assignment doing anything.
+        vm.Preflight = StartPreflight.Ready;
+        Assert.Null(vm.EnvironmentIssue ?? vm.MediaError ?? vm.StartHint);
+
+        vm.Preflight = new StartPreflight(reason);
+
+        Assert.False(vm.StartCommand.CanExecute(null));
+        Assert.NotNull(vm.EnvironmentIssue ?? vm.MediaError ?? vm.StartHint);
+    }
+
+    [Fact]
+    public async Task Nothing_is_said_once_the_start_is_cleared()
+    {
+        var (vm, _, _, _, _) = await CreateLoadedAsync();
+
+        vm.SelectedProfile = vm.Profiles.Single();
+        vm.SelectedChannel = vm.Channels.Single();
+        await vm.PickFileCommand.ExecuteAsync(null);
+
+        Assert.True(vm.StartCommand.CanExecute(null));
+        Assert.Null(vm.EnvironmentIssue);
+        Assert.Null(vm.MediaError);
+        Assert.Null(vm.StartHint);
+    }
+
+    /// <summary>The checklist reports the four launch conditions, one by one, as they are met.</summary>
+    [Fact]
+    public async Task The_checklist_fills_in_as_the_user_progresses()
+    {
+        var (vm, _, _, _, _) = await CreateLoadedAsync();
+
+        Assert.True(vm.IsEnvironmentReady);    // a healthy toolchain was probed on load
+        Assert.False(vm.IsProfileReady);
+        Assert.False(vm.IsChannelReady);
+        Assert.False(vm.IsFileReady);
+
+        vm.SelectedProfile = vm.Profiles.Single();
+        Assert.True(vm.IsProfileReady);
+
+        vm.SelectedChannel = vm.Channels.Single();
+        Assert.True(vm.IsChannelReady);
+
+        await vm.PickFileCommand.ExecuteAsync(null);
+        Assert.True(vm.IsFileReady);
+    }
+
+    /// <summary>
+    /// The drop zone is the first thing on the page, so choosing the file BEFORE the profile is the
+    /// natural order — and it is the one that used to break. The preflight re-answers
+    /// <c>ProfileNotSelected</c>, a verdict equal to the one already held; the record raises no
+    /// change, and the checklist was never told about the file.
+    /// </summary>
+    [Fact]
+    public async Task A_file_chosen_before_the_profile_still_ticks_the_file_box()
+    {
+        var (vm, _, _, _, _) = await CreateLoadedAsync();
+
+        await vm.PickFileCommand.ExecuteAsync(null);
+
+        Assert.Equal(InputFile, vm.InputFilePath);
+        Assert.True(vm.IsFileReady);
+        Assert.False(vm.IsProfileReady);
+    }
+
+    /// <summary>
+    /// The preflight reports ONE reason, the first that holds. Deriving the boxes from it made them
+    /// lie whenever another condition won the race.
+    /// </summary>
+    [Fact]
+    public async Task A_box_reports_its_own_condition_not_the_winning_reason()
+    {
+        var report = new FfmpegEnvironmentReport(
+            FfmpegAvailable: true, FfprobeAvailable: true, FfmpegVersion: "7.1",
+            NvencAvailable: false, Error: null);
+
+        var broken = new MediaValidationResult(
+            Exists: true, Readable: false, Duration: null, Width: null, Height: null, Fps: null,
+            VideoCodec: null, AudioCodec: null, Error: null);
+
+        var (vm, _, _, _, _) = await CreateLoadedAsync(environment: report, media: broken);
+
+        vm.SelectedProfile = vm.Profiles.Single();   // an h264_nvenc profile, on a machine without it
+        await vm.PickFileCommand.ExecuteAsync(null);
+
+        // The unreadable file is reported first, so NvencUnavailable never surfaces as the reason.
+        Assert.Equal(StartBlockReason.InputFileUnreadable, vm.Preflight.Reason);
+
+        Assert.False(vm.IsFileReady);
+        Assert.False(vm.IsEnvironmentReady);   // the encoder is still missing, whatever won the race
+    }
+
+    [Fact]
+    public async Task An_unreadable_file_does_not_tick_the_file_box()
+    {
+        var broken = new MediaValidationResult(
+            Exists: true, Readable: false, Duration: null, Width: null, Height: null, Fps: null,
+            VideoCodec: null, AudioCodec: null, Error: null);
+
+        var (vm, _, _, _, _) = await CreateLoadedAsync(media: broken);
+
+        await vm.PickFileCommand.ExecuteAsync(null);
+
+        Assert.False(vm.IsFileReady);
+    }
+
+    /// <summary>A machine without NVENC and an NVENC profile: the environment box goes off.</summary>
+    [Fact]
+    public async Task A_missing_encoder_unticks_the_environment_box()
+    {
+        var report = new FfmpegEnvironmentReport(
+            FfmpegAvailable: true, FfprobeAvailable: true, FfmpegVersion: "7.1",
+            NvencAvailable: false, Error: null);
+
+        var (vm, _, _, _, _) = await CreateLoadedAsync(environment: report);
+
+        Assert.True(vm.IsEnvironmentReady);
+
+        vm.SelectedProfile = vm.Profiles.Single();   // an h264_nvenc profile
+
+        Assert.False(vm.IsEnvironmentReady);
+    }
+
+    // ------------------------------------------------------------ a file dropped on the page
+
+    [Fact]
+    public async Task A_dropped_file_goes_through_the_same_validation_as_a_picked_one()
+    {
+        var (vm, _, _, _, _) = await CreateLoadedAsync();
+
+        vm.SelectedProfile = vm.Profiles.Single();
+        vm.SelectedChannel = vm.Channels.Single();
+
+        await vm.UseFileCommand.ExecuteAsync(@"C:\videos\dropped.mp4");
+
+        Assert.Equal(@"C:\videos\dropped.mp4", vm.InputFilePath);
+        Assert.True(vm.IsFileReady);
+        Assert.True(vm.StartCommand.CanExecute(null));
+    }
+
+    // ---------------------------------------------------------------- first run and end of run
+
+    [Fact]
+    public async Task A_blank_install_asks_for_a_profile_and_a_channel()
+    {
+        var (vm, _, _, _, _) = await CreateLoadedAsync(empty: true);
+
+        Assert.False(vm.HasProfiles);
+        Assert.False(vm.HasChannels);
+        Assert.True(vm.NeedsSetup);
+    }
+
+    [Fact]
+    public async Task A_configured_install_asks_for_nothing()
+    {
+        var (vm, _, _, _, _) = await CreateLoadedAsync();
+
+        Assert.True(vm.HasProfiles);
+        Assert.True(vm.HasChannels);
+        Assert.False(vm.NeedsSetup);
+    }
+
+    /// <summary>
+    /// A broadcast that ends leaves a report behind — otherwise the page simply empties out, and the
+    /// last thing the user is left with is nothing (Peak-End rule).
+    /// </summary>
+    [Fact]
+    public async Task A_finished_session_leaves_a_report()
+    {
+        var (vm, _, monitor, _, _) = await CreateLoadedAsync();
+
+        monitor.RaiseChanged(Snapshot(SessionStatus.Running, fps: 30));
+        Assert.Null(vm.SessionSummary);            // nothing to report while it is on air
+        Assert.Equal("En direct", vm.StatusHeadline);
+        Assert.Equal(StatusSeverity.Success, vm.Severity);
+
+        monitor.RaiseChanged(Snapshot(SessionStatus.Stopped, reconnectAttempts: 2));
+
+        Assert.NotNull(vm.SessionSummary);
+        Assert.Contains("arrêtée", vm.SessionSummary);
+        Assert.Contains("2 reconnexions", vm.SessionSummary);
+        Assert.Equal(StatusSeverity.Neutral, vm.Severity);
+    }
+
+    /// <summary>
+    /// ffmpeg counts drops per PROCESS and a reconnection starts a new one, so the last snapshot's
+    /// counter is not the broadcast's total. Reporting it as such announced "0 image perdue" for the
+    /// session that lost the most — the one the report exists for.
+    /// </summary>
+    [Fact]
+    public async Task Drops_survive_a_reconnection_in_the_end_of_session_report()
+    {
+        var (vm, time, monitor, _, _) = await CreateLoadedAsync();
+
+        monitor.RaiseChanged(Snapshot(SessionStatus.Running, fps: 30, drops: 1200));
+        Assert.Equal(1200, vm.DroppedFrames);
+
+        // The connection breaks: the coordinator forgets the dead process's stats on purpose.
+        monitor.RaiseChanged(Snapshot(SessionStatus.Reconnecting, reconnectAttempts: 1, withStats: false));
+        Assert.Equal(1200, vm.DroppedFrames);   // a snapshot without stats says nothing about drops
+
+        // The relaunched ffmpeg counts from zero again.
+        time.Advance(DashboardViewModel.StatsThrottle);
+        monitor.RaiseChanged(Snapshot(SessionStatus.Running, fps: 30, reconnectAttempts: 1, drops: 5));
+        Assert.Equal(1205, vm.DroppedFrames);
+
+        monitor.RaiseChanged(Snapshot(SessionStatus.Stopped, reconnectAttempts: 1, drops: 5));
+
+        Assert.Contains("1205 images perdues", vm.SessionSummary);
+        Assert.Contains("1 reconnexion", vm.SessionSummary);
+    }
+
+    /// <summary>
+    /// The health card answers "vers quoi ? avec quel fichier ?" — from what was LAUNCHED, not from
+    /// the selection, which the user stays free to change while the broadcast runs.
+    /// </summary>
+    [Fact]
+    public async Task The_live_card_keeps_the_channel_the_broadcast_was_started_with()
+    {
+        var (vm, _, monitor, _, _) = await CreateLoadedAsync();
+
+        Assert.Null(vm.LiveChannelName);   // nothing launched: the card says nothing rather than a blank
+
+        vm.SelectedProfile = vm.Profiles.Single();
+        vm.SelectedChannel = vm.Channels.Single();
+        await vm.PickFileCommand.ExecuteAsync(null);
+        await vm.StartCommand.ExecuteAsync(null);
+
+        monitor.RaiseChanged(Snapshot(SessionStatus.Running, fps: 30));
+
+        Assert.Equal(TestChannel.Name, vm.LiveChannelName);
+        Assert.Equal(InputFile, vm.LiveInputFilePath);
+
+        // The selection is the user's and may move; what is on air does not.
+        vm.SelectedChannel = null;
+
+        Assert.Equal(TestChannel.Name, vm.LiveChannelName);
+    }
+
+    [Fact]
+    public async Task A_failed_session_reports_the_reason_the_domain_gave()
+    {
+        var (vm, _, monitor, _, _) = await CreateLoadedAsync();
+
+        monitor.RaiseChanged(Snapshot(SessionStatus.Running, fps: 30));
+        monitor.RaiseChanged(Snapshot(SessionStatus.Failed) with { LastError = "Connection refused." });
+
+        Assert.Equal(StatusSeverity.Critical, vm.Severity);
+        Assert.Contains("Connection refused.", vm.SessionSummary);
+    }
+
+    [Fact]
+    public async Task A_degraded_broadcast_reads_as_a_warning_not_as_a_success()
+    {
+        var (vm, _, monitor, _, _) = await CreateLoadedAsync();
+
+        monitor.RaiseChanged(Snapshot(SessionStatus.Running, speed: 0.8, health: HealthIndicator.Warning));
+
+        Assert.Equal(StatusSeverity.Caution, vm.Severity);
+        Assert.Equal("En direct", vm.StatusHeadline);   // the word does not change: the colour is not the message
+    }
+
     /// <summary>What is shown before launching is the MASKED command line (SPEC §4).</summary>
     [Fact]
     public async Task Command_preview_is_the_masked_line()
@@ -388,16 +673,24 @@ public sealed class DashboardViewModelTests
         NvencAvailable: true,
         Error: null);
 
+    /// <param name="drops">Counter of the CURRENT ffmpeg process — it restarts at zero after each
+    /// reconnection, which is the whole difficulty of the end-of-session tally.</param>
+    /// <param name="withStats">False reproduces a snapshot the coordinator publishes with no stats
+    /// at all, as it does while reconnecting.</param>
     private static SessionSnapshot Snapshot(
         SessionStatus status,
         double fps = 0,
         double speed = 1.0,
         int reconnectAttempts = 0,
-        HealthIndicator health = HealthIndicator.Ok)
+        HealthIndicator health = HealthIndicator.Ok,
+        int drops = 0,
+        bool withStats = true)
         => new(
             TestSession,
             status,
-            new FfmpegStats(Frame: 100, Fps: fps, BitrateKbps: 3000, Speed: speed, DroppedFrames: 0, DupFrames: 0, Time: TimeSpan.FromSeconds(5)),
+            withStats
+                ? new FfmpegStats(Frame: 100, Fps: fps, BitrateKbps: 3000, Speed: speed, DroppedFrames: drops, DupFrames: 0, Time: TimeSpan.FromSeconds(5))
+                : null,
             health,
             reconnectAttempts,
             LastError: null);
@@ -417,14 +710,16 @@ public sealed class DashboardViewModelTests
     private static async Task<Fixture> CreateLoadedAsync(
         FakeSessionMonitor? monitor = null,
         FfmpegEnvironmentReport? environment = null,
-        MediaValidationResult? media = null)
+        MediaValidationResult? media = null,
+        bool empty = false)
     {
         monitor ??= new FakeSessionMonitor();
         var time = new FakeTimeProvider();
         var dispatcher = new FakeUiDispatcher();
 
-        IReadOnlyList<StreamProfileDto> profiles = [TestProfile];
-        IReadOnlyList<ChannelDto> channels = [TestChannel];
+        // "empty" is the first run: no profile, no channel — the state the page has to guide out of.
+        IReadOnlyList<StreamProfileDto> profiles = empty ? [] : [TestProfile];
+        IReadOnlyList<ChannelDto> channels = empty ? [] : [TestChannel];
 
         // The preflight is answered by the REAL Application handler, not by a canned verdict. The
         // rule is tested on its own (GetStartPreflightHandlerTests); what these tests must prove is

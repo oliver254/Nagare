@@ -11,13 +11,23 @@
                 <!-- Thème Fluent des contrôles WinUI : sans ce dictionnaire, les contrôles n'ont
                      aucun style et la fenêtre s'affiche vide. -->
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+
+                <!-- Après le thème Fluent : ce dictionnaire en consomme les ThemeResource. -->
+                <ResourceDictionary Source="ms-appx:///Styles/Nagare.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
             <converters:NotNullToBooleanConverter x:Key="NotNullToBool" />
             <converters:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+            <converters:InvertedBoolToVisibilityConverter x:Key="InvertedBoolToVisibility" />
+            <converters:NotNullToVisibilityConverter x:Key="NotNullToVisibility" />
+            <converters:NotConverter x:Key="Not" />
             <converters:HealthToBrushConverter x:Key="HealthToBrush" />
+            <converters:SeverityToBrushConverter x:Key="SeverityToBrush" />
+            <converters:SeverityToInfoBarConverter x:Key="SeverityToInfoBar" />
+            <converters:StatusToBusyRingConverter x:Key="StatusToBusyRing" />
             <converters:StatConverter x:Key="Stat" />
             <converters:KeyStateConverter x:Key="KeyState" />
+            <converters:KeyStateToBrushConverter x:Key="KeyStateToBrush" />
             <converters:AsTextConverter x:Key="AsText" />
             <converters:EncodingSummaryConverter x:Key="EncodingSummary" />
         </ResourceDictionary>

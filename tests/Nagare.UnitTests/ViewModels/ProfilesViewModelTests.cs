@@ -121,6 +121,12 @@ public sealed class ProfilesViewModelTests
         Assert.Equal("ultrafast", vm.EditPreset);   // an nvenc preset would no longer be valid (E6)
     }
 
+    /// <summary>
+    /// Edit as the FIRST action, on an H264Nvenc profile — which is also EditCodec's default, so
+    /// assigning it raises no change and the codec hook does not fire. This is why Populate calls
+    /// RefreshPresets explicitly even though the hook usually does: without it AvailablePresets would
+    /// still be empty here and "p2" would be dropped for not being in the list.
+    /// </summary>
     [Fact]
     public async Task Editing_loads_every_field_of_the_profile()
     {
@@ -141,9 +147,99 @@ public sealed class ProfilesViewModelTests
         Assert.Equal(Existing.Id, mediator.Single<SaveStreamProfileCommand>().Id);   // update, not creation
     }
 
-    private static async Task<(ProfilesViewModel Vm, FakeMediator Mediator)> CreateLoadedAsync()
+    // ------------------------------------------------------------------------ templates
+
+    /// <summary>
+    /// The templates are built from the domain's own value objects, so this is not a formality: a
+    /// template violating E1-E8 could not be constructed at all, and the list would fail to load.
+    /// Both encoder families are represented — a machine without NVENC must still have an answer.
+    /// </summary>
+    [Fact]
+    public void Every_template_is_a_profile_the_domain_accepts()
     {
-        IReadOnlyList<StreamProfileDto> profiles = [Existing];
+        Assert.NotEmpty(ProfileTemplate.All);
+        Assert.Contains(ProfileTemplate.All, t => !t.Video.Codec.RequiresNvenc());
+        Assert.Contains(ProfileTemplate.All, t => t.Video.Codec.RequiresNvenc());
+
+        // Reconstructing each one re-runs every invariant, on this thread, with the failure visible.
+        foreach (var template in ProfileTemplate.All)
+        {
+            _ = new EncodingSettings(
+                template.Video.Codec, template.Video.Preset, template.Video.RateControl,
+                template.Video.BitrateKbps, template.Video.MaxrateKbps, template.Video.BufsizeKbps,
+                template.Video.GopSize, template.Video.KeyintMin, template.Video.Resolution, template.Video.Fps);
+        }
+    }
+
+    [Fact]
+    public async Task A_template_fills_the_editor_and_saves_as_it_stands()
+    {
+        var (vm, mediator) = await CreateLoadedAsync();
+
+        vm.NewCommand.Execute(null);
+        vm.SelectedTemplate = vm.Templates.First(t => t.Video.Codec == VideoCodec.Libx264);
+
+        Assert.Equal(vm.SelectedTemplate.Name, vm.EditName);   // an empty name takes the template's
+        Assert.Equal("veryfast", vm.EditPreset);               // the preset list followed the codec
+        Assert.True(vm.EditHasResolution);
+
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        var command = mediator.Single<SaveStreamProfileCommand>();
+        Assert.Equal(vm.SelectedTemplate.Video, command.Video);
+        Assert.Equal(vm.SelectedTemplate.Audio, command.Audio);
+        Assert.Null(vm.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task A_template_never_renames_a_profile_the_user_has_named()
+    {
+        var (vm, _) = await CreateLoadedAsync();
+
+        vm.NewCommand.Execute(null);
+        vm.EditName = "Mon réglage";
+        vm.SelectedTemplate = vm.Templates[0];
+
+        Assert.Equal("Mon réglage", vm.EditName);
+    }
+
+    /// <summary>Opening the editor clears the template: it offers a start, it does not report one.</summary>
+    [Fact]
+    public async Task Opening_the_editor_clears_the_template()
+    {
+        var (vm, _) = await CreateLoadedAsync();
+
+        vm.NewCommand.Execute(null);
+        vm.SelectedTemplate = vm.Templates[0];
+
+        vm.SelectedProfile = vm.Profiles.Single();
+        vm.EditCommand.Execute(null);
+
+        Assert.Null(vm.SelectedTemplate);
+        Assert.Equal("1080p NVENC", vm.EditName);   // the template did not leak into the loaded profile
+    }
+
+    // ---------------------------------------------------------------------- empty state
+
+    [Fact]
+    public async Task A_blank_install_reports_an_empty_list()
+    {
+        var (vm, _) = await CreateLoadedAsync(empty: true);
+
+        Assert.True(vm.IsEmpty);
+    }
+
+    [Fact]
+    public async Task A_populated_list_is_not_empty()
+    {
+        var (vm, _) = await CreateLoadedAsync();
+
+        Assert.False(vm.IsEmpty);
+    }
+
+    private static async Task<(ProfilesViewModel Vm, FakeMediator Mediator)> CreateLoadedAsync(bool empty = false)
+    {
+        IReadOnlyList<StreamProfileDto> profiles = empty ? [] : [Existing];
 
         var mediator = new FakeMediator()
             .Answer<GetStreamProfilesQuery>(profiles)
