@@ -712,6 +712,34 @@ public sealed class DashboardViewModelTests
     }
 
     /// <summary>
+    /// US-0: a non-positive duration is refused, and the refusal reaches the user in French — the
+    /// domain states the rule (in English, by convention), the ViewModel translates that one refusal
+    /// for the InfoBar. The fake stands in for the domain by throwing the same DomainException.
+    /// </summary>
+    [Fact]
+    public async Task A_zero_duration_is_refused_in_French()
+    {
+        var (vm, _, _, _, mediator) = await CreateLoadedAsync();
+
+        // The real coordinator lets StreamSession.Launch throw on a non-positive duration; reproduce it.
+        mediator.Answer<StartStreamCommand>(command =>
+            command.MaxDuration is { } d && d <= TimeSpan.Zero
+                ? throw new DomainException("The maximum duration must be greater than zero.")
+                : TestSession);
+
+        vm.SelectedProfile = vm.Profiles.Single();
+        vm.SelectedChannel = vm.Channels.Single();
+        await vm.PickFileCommand.ExecuteAsync(null);
+
+        vm.DurationHours = 0;
+        await vm.StartCommand.ExecuteAsync(null);
+
+        Assert.NotNull(vm.ErrorMessage);
+        Assert.Contains("supérieure à zéro", vm.ErrorMessage);
+        Assert.DoesNotContain("must be greater", vm.ErrorMessage);   // never the raw English domain text
+    }
+
+    /// <summary>
     /// The duration field's upper bound is the domain's own maximum, not a hardcoded number: the cap
     /// the user sees and the invariant the domain enforces are the same value (ADR-0009 §1).
     /// </summary>

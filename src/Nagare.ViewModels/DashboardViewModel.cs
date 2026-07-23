@@ -140,6 +140,20 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
     private TimeSpan? MaxDuration => DurationHours is { } hours ? TimeSpan.FromHours(hours) : null;
 
     /// <summary>
+    /// French rendering of the domain's duration invariants (ADR-0009) when the entered value breaks
+    /// them, else null. Used only to TRANSLATE the domain's refusal for display — the rule itself
+    /// lives in <see cref="StreamSession"/>, and its bounds are read from there so a change to the
+    /// domain constant carries here for free.
+    /// </summary>
+    private string? InvalidDurationMessage() => MaxDuration switch
+    {
+        { } d when d <= TimeSpan.Zero => "La durée maximale doit être supérieure à zéro.",
+        { } d when d > StreamSession.MaxAllowedDuration =>
+            $"La durée maximale ne peut pas dépasser {StreamSession.MaxAllowedDuration.TotalHours:0} heures.",
+        _ => null
+    };
+
+    /// <summary>
     /// Upper bound of the duration field, in hours — sourced from the domain
     /// (<see cref="StreamSession.MaxAllowedDuration"/>), never restated in the view. The input cap and
     /// the invariant the domain enforces are then the SAME number by construction: raise the domain
@@ -384,8 +398,21 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
         LiveChannelName = SelectedChannel!.Name;
         LiveInputFilePath = InputFilePath;
 
-        await _mediator.DispatchAsync<StartStreamCommand, SessionId>(
-            new StartStreamCommand(SelectedProfile!.Id, SelectedChannel.Id, InputFilePath!, MaxDuration));
+        try
+        {
+            await _mediator.DispatchAsync<StartStreamCommand, SessionId>(
+                new StartStreamCommand(SelectedProfile!.Id, SelectedChannel.Id, InputFilePath!, MaxDuration));
+        }
+        catch (DomainException) when (InvalidDurationMessage() is { } message)
+        {
+            // The DOMAIN refuses a non-positive or over-long duration (ADR-0009). Its message is
+            // English by convention, and the duration field is the one place a valid-looking screen
+            // can still trip it (the NumberBox bounds the rest). So this one refusal is re-surfaced in
+            // French through the same InfoBar — a TRANSLATION, not a second rule: the threshold read
+            // here is the domain's own (StreamSession.MaxAllowedDuration), so the two cannot diverge.
+            // Every other DomainException keeps its own text.
+            throw new DomainException(message);
+        }
     });
 
     [RelayCommand(CanExecute = nameof(CanStop))]
