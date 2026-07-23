@@ -14,6 +14,8 @@ public sealed record ReconnectStarted(SessionId Id, int Attempt, TimeSpan NextDe
 
 public sealed record SessionRecovered(SessionId Id, int AfterAttempts, DateTimeOffset OccurredAt) : IDomainEvent;
 
-public sealed record SessionStopped(SessionId Id, DateTimeOffset OccurredAt) : IDomainEvent;
+// SessionStopped.Reason is the one exception to the scrubbing note above: it is a
+// SessionStopReason, not a text — there is nothing in it to scrub.
+public sealed record SessionStopped(SessionId Id, SessionStopReason Reason, DateTimeOffset OccurredAt) : IDomainEvent;
 
 public sealed record SessionFailed(SessionId Id, string Reason, DateTimeOffset OccurredAt) : IDomainEvent;

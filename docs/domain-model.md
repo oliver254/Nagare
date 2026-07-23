@@ -1,6 +1,7 @@
 # Nagare — Modèle du domaine (UML mermaid)
 
-> Vue de conception (itération 1). Source : `docs/ARCHITECTURE.md` §2.
+> Vue de conception (itération 1, complétée par l'ADR-0009 — durée maximale de
+> diffusion). Source : `docs/ARCHITECTURE.md` §2.
 > Identifiants en anglais (le code est intégralement en anglais).
 
 ## Diagramme de classes
@@ -63,6 +64,7 @@ classDiagram
 
     class StreamSession {
         <<aggregate root>>
+        +TimeSpan MaxAllowedDuration$
         +SessionId Id
         +ProfileId ProfileId
         +ChannelId ChannelId
@@ -70,11 +72,13 @@ classDiagram
         +SessionStatus Status
         +int ReconnectAttempts
         +ReconnectPolicy Policy
+        +TimeSpan? MaxDuration
+        +SessionStopReason? StopReason
         +string? LastError
-        +Launch(profileId, channelId, inputFilePath, policy)$ StreamSession
+        +Launch(profileId, channelId, inputFilePath, policy, maxDuration)$ StreamSession
         +MarkRunning()
         +BeginReconnect(reason)
-        +Stop()
+        +Stop(reason)
         +MarkFailed(reason)
     }
     class ReconnectPolicy {
@@ -98,6 +102,11 @@ classDiagram
         Reconnecting
         Stopped
         Failed
+    }
+    class SessionStopReason {
+        <<enumeration>>
+        Manual
+        DurationElapsed
     }
     class VideoCodec {
         <<enumeration>>
@@ -127,6 +136,7 @@ classDiagram
 
     StreamSession *-- ReconnectPolicy
     StreamSession ..> SessionStatus
+    StreamSession ..> SessionStopReason
     StreamSession ..> StreamProfile : réf. ProfileId
     StreamSession ..> Channel : réf. ChannelId
 ```
@@ -140,6 +150,10 @@ Notes de conception :
 - `ProtectedStreamKey` ne contient **que le chiffré** ; `ToString()` renvoie
   `****`. Le déchiffrement vit en Infrastructure, jamais en Domain/Application.
 - `StreamSession` n'est **pas persistée** en itération 1 (vit en mémoire).
+- `StreamSession` porte l'**intention** de durée (`MaxDuration`, invariants
+  **S1–S3**), jamais l'instant de fin : elle n'a aucune horloge, et le `Domain`
+  n'a aucune dépendance. L'échéance est calculée et surveillée par le
+  `StreamSessionCoordinator` (ADR-0009).
 
 ## Diagramme d'états — `StreamSession`
 
@@ -150,14 +164,14 @@ stateDiagram-v2
     [*] --> Starting : StartStreamCommand / SessionLaunched
     Starting --> Running : 1res stats ffmpeg / SessionStarted
     Starting --> Failed : échec lancement / SessionFailed
-    Starting --> Stopped : stop utilisateur / SessionStopped
+    Starting --> Stopped : arrêt manuel ou durée atteinte / SessionStopped
     Running --> Reconnecting : chute du flux / ReconnectStarted
-    Running --> Stopped : stop utilisateur / SessionStopped
+    Running --> Stopped : arrêt manuel ou durée atteinte / SessionStopped
     Running --> Failed : faute interne / abandon explicite / SessionFailed
     Reconnecting --> Reconnecting : relance échouée, tentative n+1 / ReconnectStarted
     Reconnecting --> Running : redémarrage OK / SessionRecovered
     Reconnecting --> Failed : tentatives épuisées / SessionFailed
-    Reconnecting --> Stopped : stop utilisateur / SessionStopped
+    Reconnecting --> Stopped : arrêt manuel ou durée atteinte / SessionStopped
     Stopped --> [*]
     Failed --> [*]
 ```
@@ -185,6 +199,14 @@ pour un futur incident.
 > refusait `Reconnecting` — la branche d'épuisement était donc **inatteignable**
 > (aucun backoff progressif, aucun échec après N tentatives). Bug révélé par les
 > tests et corrigé (commit `41856d9`).
+
+**L'arrêt programmé n'ajoute aucune transition** (ADR-0009) : la durée atteinte
+emprunte les mêmes `→ Stopped` que l'arrêt manuel, avec
+`SessionStopReason.DurationElapsed`. C'est ce qui rend applicable, sans toucher la
+machine à états, l'arbitrage « à l'échéance, les tentatives de reconnexion sont
+abandonnées » (`Reconnecting → Stopped`). Invariant **S3** : cette raison exige que
+la session ait une `MaxDuration` — un déclencheur périmé échoue bruyamment plutôt
+que d'étiqueter un arrêt qui n'a pas eu lieu.
 
 ## Événements de domaine
 
@@ -214,6 +236,7 @@ classDiagram
     }
     class SessionStopped {
         +SessionId Id
+        +SessionStopReason Reason
     }
     class SessionFailed {
         +SessionId Id
@@ -231,7 +254,6 @@ Dispatch (volontairement minimal, ADR/ARCHITECTURE §2.5) : l'agrégat accumule 
 événements ; le `StreamSessionCoordinator` (Application) draine la collection après
 chaque transition et les publie explicitement (notification UI + logs). Pas de bus,
 pas de réflexion — `IDomainEventHandler<T>` seulement si un 2ᵉ consommateur apparaît.
-```
 
 ## Couches (dépendances)
 

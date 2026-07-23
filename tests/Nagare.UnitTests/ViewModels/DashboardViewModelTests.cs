@@ -645,6 +645,151 @@ public sealed class DashboardViewModelTests
         Assert.Equal(TestProfile.Id, command.ProfileId);
         Assert.Equal(TestChannel.Id, command.ChannelId);
         Assert.Equal(InputFile, command.InputFilePath);
+        Assert.Null(command.MaxDuration);   // no duration entered = broadcast until stopped
+    }
+
+    /// <summary>
+    /// The duration is entered in DECIMAL hours (the UI unit) and travels as a TimeSpan (the model
+    /// unit). The conversion is the whole of this ViewModel's share of ADR-0009.
+    /// </summary>
+    [Fact]
+    public async Task Start_sends_the_max_duration_when_one_is_entered()
+    {
+        var (vm, _, _, _, mediator) = await CreateLoadedAsync();
+
+        vm.SelectedProfile = vm.Profiles.Single();
+        vm.SelectedChannel = vm.Channels.Single();
+        await vm.PickFileCommand.ExecuteAsync(null);
+
+        vm.DurationHours = 1.5;
+        await vm.StartCommand.ExecuteAsync(null);
+
+        Assert.Equal(TimeSpan.FromMinutes(90), mediator.Single<StartStreamCommand>().MaxDuration);
+    }
+
+    /// <summary>
+    /// US-0: typing a duration shows the end time BEFORE launch; clearing it (or entering nothing)
+    /// takes the preview away, since a broadcast with no limit has no end to announce.
+    /// </summary>
+    [Fact]
+    public async Task Entering_a_duration_previews_the_end_time_before_launch()
+    {
+        var (vm, _, _, _, _) = await CreateLoadedAsync();
+
+        Assert.Null(vm.DurationEndPreview);   // nothing entered yet
+
+        vm.DurationHours = 2;
+        Assert.NotNull(vm.DurationEndPreview);
+
+        vm.DurationHours = null;
+        Assert.Null(vm.DurationEndPreview);   // "Sans limite" says nothing about an end time
+
+        vm.DurationHours = 0;
+        Assert.Null(vm.DurationEndPreview);   // zero is not a duration
+    }
+
+    /// <summary>
+    /// US-0: a running broadcast started with a maximum duration shows the local time it will stop
+    /// itself at (from <see cref="SessionSnapshot.PlannedEndsAt"/>). An unbounded one shows nothing,
+    /// and the label goes away once the session ends.
+    /// </summary>
+    [Fact]
+    public async Task A_bounded_broadcast_shows_its_automatic_stop_time()
+    {
+        var (vm, _, monitor, _, _) = await CreateLoadedAsync();
+
+        // A bounded session carries PlannedEndsAt from its very first snapshot (the coordinator sets
+        // it before publishing), and that first snapshot is a status change — published at once.
+        monitor.RaiseChanged(Snapshot(
+            SessionStatus.Running, fps: 30, plannedEndsAt: DateTimeOffset.UtcNow.AddHours(2)));
+        Assert.NotNull(vm.PlannedEndLabel);
+
+        // The session ends: there is no future stop left to announce, and the label goes away.
+        monitor.RaiseChanged(Snapshot(
+            SessionStatus.Stopped, plannedEndsAt: DateTimeOffset.UtcNow.AddHours(2),
+            stopReason: SessionStopReason.DurationElapsed));
+        Assert.Null(vm.PlannedEndLabel);
+    }
+
+    /// <summary>
+    /// US-0: a non-positive duration is refused, and the refusal reaches the user in French — the
+    /// domain states the rule (in English, by convention), the ViewModel translates that one refusal
+    /// for the InfoBar. The fake stands in for the domain by throwing the same DomainException.
+    /// </summary>
+    [Fact]
+    public async Task A_zero_duration_is_refused_in_French()
+    {
+        var (vm, _, _, _, mediator) = await CreateLoadedAsync();
+
+        // The real coordinator lets StreamSession.Launch throw on a non-positive duration; reproduce it.
+        mediator.Answer<StartStreamCommand>(command =>
+            command.MaxDuration is { } d && d <= TimeSpan.Zero
+                ? throw new DomainException("The maximum duration must be greater than zero.")
+                : TestSession);
+
+        vm.SelectedProfile = vm.Profiles.Single();
+        vm.SelectedChannel = vm.Channels.Single();
+        await vm.PickFileCommand.ExecuteAsync(null);
+
+        vm.DurationHours = 0;
+        await vm.StartCommand.ExecuteAsync(null);
+
+        Assert.NotNull(vm.ErrorMessage);
+        Assert.Contains("supérieure à zéro", vm.ErrorMessage);
+        Assert.DoesNotContain("must be greater", vm.ErrorMessage);   // never the raw English domain text
+    }
+
+    /// <summary>
+    /// The duration field's upper bound is the domain's own maximum, not a hardcoded number: the cap
+    /// the user sees and the invariant the domain enforces are the same value (ADR-0009 §1).
+    /// </summary>
+    [Fact]
+    public async Task The_duration_field_is_bounded_by_the_domain_maximum()
+    {
+        var (vm, _, _, _, _) = await CreateLoadedAsync();
+
+        Assert.Equal(StreamSession.MaxAllowedDuration.TotalHours, vm.MaxDurationHours);
+    }
+
+    /// <summary>An unbounded broadcast has no maximum duration, so no automatic-stop time is shown.</summary>
+    [Fact]
+    public async Task An_unbounded_broadcast_shows_no_automatic_stop_time()
+    {
+        var (vm, _, monitor, _, _) = await CreateLoadedAsync();
+
+        monitor.RaiseChanged(Snapshot(SessionStatus.Running, fps: 30));
+
+        Assert.Null(vm.PlannedEndLabel);
+    }
+
+    /// <summary>
+    /// US-0: the end-of-session report tells an automatic stop (maximum duration reached) apart from
+    /// a manual one, so the user knows the broadcast ran its course rather than being cut short.
+    /// </summary>
+    [Fact]
+    public async Task An_automatic_stop_is_named_as_such_in_the_report()
+    {
+        var (vm, _, monitor, _, _) = await CreateLoadedAsync();
+
+        monitor.RaiseChanged(Snapshot(SessionStatus.Running, fps: 30));
+        monitor.RaiseChanged(Snapshot(SessionStatus.Stopped, stopReason: SessionStopReason.DurationElapsed));
+
+        Assert.NotNull(vm.SessionSummary);
+        Assert.Contains("automatiquement", vm.SessionSummary);
+        Assert.Contains("durée atteinte", vm.SessionSummary);
+    }
+
+    [Fact]
+    public async Task A_manual_stop_is_not_reported_as_automatic()
+    {
+        var (vm, _, monitor, _, _) = await CreateLoadedAsync();
+
+        monitor.RaiseChanged(Snapshot(SessionStatus.Running, fps: 30));
+        monitor.RaiseChanged(Snapshot(SessionStatus.Stopped, stopReason: SessionStopReason.Manual));
+
+        Assert.NotNull(vm.SessionSummary);
+        Assert.Contains("arrêtée", vm.SessionSummary);
+        Assert.DoesNotContain("automatiquement", vm.SessionSummary);
     }
 
     // ------------------------------------------------------------------ fixtures
@@ -677,6 +822,8 @@ public sealed class DashboardViewModelTests
     /// reconnection, which is the whole difficulty of the end-of-session tally.</param>
     /// <param name="withStats">False reproduces a snapshot the coordinator publishes with no stats
     /// at all, as it does while reconnecting.</param>
+    /// <param name="plannedEndsAt">Null = a broadcast with no maximum duration (ADR-0009).</param>
+    /// <param name="stopReason">Null = the session was not stopped (running, or failed).</param>
     private static SessionSnapshot Snapshot(
         SessionStatus status,
         double fps = 0,
@@ -684,7 +831,9 @@ public sealed class DashboardViewModelTests
         int reconnectAttempts = 0,
         HealthIndicator health = HealthIndicator.Ok,
         int drops = 0,
-        bool withStats = true)
+        bool withStats = true,
+        DateTimeOffset? plannedEndsAt = null,
+        SessionStopReason? stopReason = null)
         => new(
             TestSession,
             status,
@@ -693,7 +842,9 @@ public sealed class DashboardViewModelTests
                 : null,
             health,
             reconnectAttempts,
-            LastError: null);
+            LastError: null,
+            plannedEndsAt,
+            stopReason);
 
     /// <summary>A loaded dashboard and the doubles behind it (positional: deconstructible).</summary>
     private sealed record Fixture(

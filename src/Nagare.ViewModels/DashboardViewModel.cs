@@ -127,6 +127,54 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private string? _inputFilePath;
 
+    /// <summary>
+    /// Optional maximum duration, in DECIMAL hours (0,5 = 30 min): null = broadcast until stopped.
+    /// Hours are a UI unit — the model handles a <see cref="TimeSpan"/> (ADR-0009 §4). The bounds
+    /// are NOT restated here: <see cref="StreamSession.MaxAllowedDuration"/> is what the input is
+    /// bounded with, and anything that gets through anyway is refused by the domain.
+    /// </summary>
+    [ObservableProperty]
+    private double? _durationHours;
+
+    /// <summary>What the command carries. Null hours = null duration = no limit.</summary>
+    private TimeSpan? MaxDuration => DurationHours is { } hours ? TimeSpan.FromHours(hours) : null;
+
+    /// <summary>
+    /// French rendering of the domain's duration invariants (ADR-0009) when the entered value breaks
+    /// them, else null. Used only to TRANSLATE the domain's refusal for display — the rule itself
+    /// lives in <see cref="StreamSession"/>, and its bounds are read from there so a change to the
+    /// domain constant carries here for free.
+    /// </summary>
+    private string? InvalidDurationMessage() => MaxDuration switch
+    {
+        { } d when d <= TimeSpan.Zero => "La durée maximale doit être supérieure à zéro.",
+        { } d when d > StreamSession.MaxAllowedDuration =>
+            $"La durée maximale ne peut pas dépasser {StreamSession.MaxAllowedDuration.TotalHours:0} heures.",
+        _ => null
+    };
+
+    /// <summary>
+    /// Upper bound of the duration field, in hours — sourced from the domain
+    /// (<see cref="StreamSession.MaxAllowedDuration"/>), never restated in the view. The input cap and
+    /// the invariant the domain enforces are then the SAME number by construction: raise the domain
+    /// constant and the field follows, so the two can never disagree (ADR-0009 §1).
+    /// </summary>
+    public double MaxDurationHours => StreamSession.MaxAllowedDuration.TotalHours;
+
+    /// <summary>
+    /// The local clock time the broadcast would stop at, recomputed as the duration is typed — the
+    /// end time US-0 wants shown BEFORE launch. Null when no duration is set (broadcast until stopped).
+    /// It is a preview off "now": the authoritative end time is fixed at launch and read back from
+    /// <see cref="SessionSnapshot.PlannedEndsAt"/> (see <see cref="PlannedEndLabel"/>).
+    /// </summary>
+    [ObservableProperty]
+    private string? _durationEndPreview;
+
+    partial void OnDurationHoursChanged(double? value)
+        => DurationEndPreview = value is { } hours && hours > 0
+            ? $"Se termine automatiquement vers {LocalClock(_time.GetUtcNow() + TimeSpan.FromHours(hours))}"
+            : null;
+
     /// <summary>ffprobe report of the chosen file: duration, resolution, codecs.</summary>
     [ObservableProperty]
     private string? _mediaSummary;
@@ -223,6 +271,15 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty]
     private string? _liveInputFilePath;
+
+    /// <summary>
+    /// When the RUNNING broadcast has a maximum duration, the local time it will stop itself at
+    /// (ADR-0009, US-0). Fixed at launch — read from <see cref="SessionSnapshot.PlannedEndsAt"/>, not
+    /// recomputed here. Null for an unbounded broadcast, and once the session has ended. Shown on the
+    /// health card, which is itself only visible while a session is active.
+    /// </summary>
+    [ObservableProperty]
+    private string? _plannedEndLabel;
 
     /// <summary>How loud that badge reads. Paired with the word above — never colour alone.</summary>
     [ObservableProperty]
@@ -341,8 +398,21 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
         LiveChannelName = SelectedChannel!.Name;
         LiveInputFilePath = InputFilePath;
 
-        await _mediator.DispatchAsync<StartStreamCommand, SessionId>(
-            new StartStreamCommand(SelectedProfile!.Id, SelectedChannel.Id, InputFilePath!));
+        try
+        {
+            await _mediator.DispatchAsync<StartStreamCommand, SessionId>(
+                new StartStreamCommand(SelectedProfile!.Id, SelectedChannel.Id, InputFilePath!, MaxDuration));
+        }
+        catch (DomainException) when (InvalidDurationMessage() is { } message)
+        {
+            // The DOMAIN refuses a non-positive or over-long duration (ADR-0009). Its message is
+            // English by convention, and the duration field is the one place a valid-looking screen
+            // can still trip it (the NumberBox bounds the rest). So this one refusal is re-surfaced in
+            // French through the same InfoBar — a TRANSLATION, not a second rule: the threshold read
+            // here is the domain's own (StreamSession.MaxAllowedDuration), so the two cannot diverge.
+            // Every other DomainException keeps its own text.
+            throw new DomainException(message);
+        }
     });
 
     [RelayCommand(CanExecute = nameof(CanStop))]
@@ -623,6 +693,14 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
         // a second start on that very predicate. Restating it here as "Starting or Running or
         // Reconnecting" was a second definition of the same rule, free to drift.
         IsSessionActive = snapshot.Status.IsActive();
+
+        // The automatic-stop time, only while a session is on air. PlannedEndsAt lingers on the
+        // terminal snapshot (the coordinator keeps it so the ended session stays displayable), so it
+        // is gated on IsSessionActive here — a stopped broadcast has no future stop to announce.
+        PlannedEndLabel = IsSessionActive && snapshot.PlannedEndsAt is { } plannedEnd
+            ? $"Arrêt automatique à {LocalClock(plannedEnd)}"
+            : null;
+
         ReconnectAttempts = snapshot.ReconnectAttempts;
         LastError = snapshot.LastError;
         IsHealthWarning = snapshot.Health == HealthIndicator.Warning;
@@ -692,13 +770,27 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
         var tail = $"{Plural(drops, "image perdue", "images perdues")}, "
             + $"{Plural(snapshot.ReconnectAttempts, "reconnexion", "reconnexions")}.";
 
-        return snapshot.Status is SessionStatus.Failed
-            ? $"Diffusion interrompue — {snapshot.LastError ?? "cause inconnue"}. {tail}"
-            : $"Diffusion arrêtée — {tail}";
+        return snapshot.Status switch
+        {
+            SessionStatus.Failed => $"Diffusion interrompue — {snapshot.LastError ?? "cause inconnue"}. {tail}",
+
+            // US-0: a broadcast that stopped because its maximum duration was reached says so, so the
+            // user tells "it ran its course" apart from "I hit Stop" without reading the logs.
+            _ when snapshot.StopReason is SessionStopReason.DurationElapsed
+                => $"Diffusion arrêtée automatiquement (durée atteinte) — {tail}",
+
+            _ => $"Diffusion arrêtée — {tail}"
+        };
     }
 
     private static string Plural(int count, string singular, string plural)
         => $"{count} {(count > 1 ? plural : singular)}";
+
+    /// <summary>
+    /// Local wall-clock HH:mm of an instant — the automatic-stop time. Local by design: the app is
+    /// single-user on one machine, and the schedule is read in the machine's own time (arbitrage F).
+    /// </summary>
+    private static string LocalClock(DateTimeOffset instant) => instant.ToLocalTime().ToString("HH:mm");
 
     /// <summary>
     /// Called from the ffmpeg STDERR READER thread, for every single line (the runner forwards the

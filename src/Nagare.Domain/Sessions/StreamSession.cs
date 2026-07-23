@@ -14,6 +14,14 @@ namespace Nagare.Domain.Sessions;
 /// </summary>
 public sealed class StreamSession : AggregateRoot
 {
+    /// <summary>
+    /// Typo guard on the requested duration, not a product limit (ADR-0009, invariant S2). EXPOSED
+    /// so the UI can bound its input with the very value the invariant enforces — the displayed
+    /// bound and the applied bound cannot drift apart, exactly as the encoding combo boxes read
+    /// their allowed values from the domain.
+    /// </summary>
+    public static readonly TimeSpan MaxAllowedDuration = TimeSpan.FromHours(24);
+
     public SessionId Id { get; }
     public ProfileId ProfileId { get; }
     public ChannelId ChannelId { get; }
@@ -21,6 +29,17 @@ public sealed class StreamSession : AggregateRoot
     public SessionStatus Status { get; private set; }
     public int ReconnectAttempts { get; private set; }
     public ReconnectPolicy Policy { get; }
+
+    /// <summary>
+    /// How long the user agreed to broadcast; null = no limit (ADR-0009). The INTENTION lives
+    /// here; the resulting instant does not. The aggregate has no clock to decide against —
+    /// <c>Nagare.Domain</c> has no <c>TimeProvider</c> and will not get one — so the coordinator
+    /// owns the deadline and applies it.
+    /// </summary>
+    public TimeSpan? MaxDuration { get; }
+
+    /// <summary>Null until the session is stopped — and null forever on a session that FAILED.</summary>
+    public SessionStopReason? StopReason { get; private set; }
 
     /// <summary>Always passed through scrubbing before assignment (ARCHITECTURE.md §6.3).</summary>
     public string? LastError { get; private set; }
@@ -30,26 +49,49 @@ public sealed class StreamSession : AggregateRoot
         ProfileId profileId,
         ChannelId channelId,
         string inputFilePath,
-        ReconnectPolicy policy)
+        ReconnectPolicy policy,
+        TimeSpan? maxDuration)
     {
         Id = id;
         ProfileId = profileId;
         ChannelId = channelId;
         InputFilePath = inputFilePath;
         Policy = policy;
+        MaxDuration = maxDuration;
         Status = SessionStatus.Starting;
         ReconnectAttempts = 0;
     }
 
-    /// <summary>Creates a session in <see cref="SessionStatus.Starting"/> and emits <see cref="SessionLaunched"/>.</summary>
-    public static StreamSession Launch(ProfileId profileId, ChannelId channelId, string inputFilePath, ReconnectPolicy policy)
+    /// <summary>
+    /// Creates a session in <see cref="SessionStatus.Starting"/> and emits <see cref="SessionLaunched"/>.
+    /// </summary>
+    /// <param name="maxDuration">Maximum broadcast duration, null (the default) = no limit. This
+    /// default is a BUSINESS rule — "no duration given means broadcast until stopped" — which is
+    /// why it lives here and nowhere else on the way in (ADR-0009 §4).</param>
+    public static StreamSession Launch(
+        ProfileId profileId,
+        ChannelId channelId,
+        string inputFilePath,
+        ReconnectPolicy policy,
+        TimeSpan? maxDuration = null)
     {
         if (string.IsNullOrWhiteSpace(inputFilePath))
             throw new DomainException("The input file path is required.");
         if (policy is null)
             throw new DomainException("A reconnection policy is required.");
 
-        var session = new StreamSession(SessionId.New(), profileId, channelId, inputFilePath, policy);
+        if (maxDuration is { } duration)
+        {
+            // S1 / S2 (ADR-0009). A window of zero or less means nothing, and a duration beyond the
+            // guard is a typo — 240 hours instead of 24 would hold the broadcast slot for ten days.
+            if (duration <= TimeSpan.Zero)
+                throw new DomainException("The maximum duration must be greater than zero.");
+            if (duration > MaxAllowedDuration)
+                throw new DomainException(
+                    $"The maximum duration cannot exceed {MaxAllowedDuration.TotalHours:0} hours.");
+        }
+
+        var session = new StreamSession(SessionId.New(), profileId, channelId, inputFilePath, policy, maxDuration);
         session.RaiseDomainEvent(new SessionLaunched(session.Id, profileId, channelId, DateTimeOffset.UtcNow));
         return session;
     }
@@ -106,14 +148,32 @@ public sealed class StreamSession : AggregateRoot
         RaiseDomainEvent(new ReconnectStarted(Id, attempt, Policy.DelayFor(attempt), reason, DateTimeOffset.UtcNow));
     }
 
-    /// <summary>Starting|Running|Reconnecting -> Stopped (emits <see cref="SessionStopped"/>).</summary>
-    public void Stop()
+    /// <summary>
+    /// Starting|Running|Reconnecting -> Stopped (emits <see cref="SessionStopped"/>).
+    ///
+    /// The reason has NO default value on purpose (ADR-0009): the compiler then forces every call
+    /// site to say why it stops. A default would let a future automatic stop label itself "manual"
+    /// by omission, and the events are the audit trail of the broadcast.
+    ///
+    /// Reaching this from <see cref="SessionStatus.Reconnecting"/> is deliberate and is what makes
+    /// "the scheduled stop wins over the backoff" work without a new transition: the user asked for
+    /// N hours, retrying past them contradicts that.
+    /// </summary>
+    public void Stop(SessionStopReason reason)
     {
         if (Status is not (SessionStatus.Starting or SessionStatus.Running or SessionStatus.Reconnecting))
             throw InvalidTransition(nameof(Stop));
 
+        // S3 (ADR-0009). Without a limit there is no duration to elapse: a trigger reaching such a
+        // session is a coordinator bug, and it must fail LOUDLY rather than mislabel the stop. This
+        // is also what keeps MaxDuration from being dead data.
+        if (reason is SessionStopReason.DurationElapsed && MaxDuration is null)
+            throw new DomainException(
+                "A session without a maximum duration cannot be stopped because its duration elapsed.");
+
+        StopReason = reason;
         Status = SessionStatus.Stopped;
-        RaiseDomainEvent(new SessionStopped(Id, DateTimeOffset.UtcNow));
+        RaiseDomainEvent(new SessionStopped(Id, reason, DateTimeOffset.UtcNow));
     }
 
     /// <summary>
@@ -124,6 +184,9 @@ public sealed class StreamSession : AggregateRoot
     ///
     /// This does NOT open a shortcut for ffmpeg exits — a drop of an established stream still goes
     /// through <see cref="BeginReconnect"/> and consumes the reconnection budget.
+    ///
+    /// <see cref="StopReason"/> stays null: a failure is not a stop, and
+    /// <see cref="SessionFailed"/> already says what happened.
     /// </summary>
     public void MarkFailed(string reason)
     {

@@ -215,6 +215,25 @@ public sealed partial class AsTextConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
+/// <summary>
+/// Bridges the optional maximum duration (a <see cref="double"/>? of hours, ADR-0009) and a
+/// <see cref="NumberBox"/>, whose <c>Value</c> is a plain <see cref="double"/> that reads
+/// <see cref="double.NaN"/> when the field is empty and then shows its placeholder ("Sans limite").
+///
+/// <para>Null hours &lt;-&gt; NaN, so the field can be left blank without the ViewModel ever taking a
+/// WinUI type or a sentinel of its own. <c>ConvertBack</c> returns null for an empty box; the
+/// <c>null!</c> is the return of a value, not a bug — <see cref="IValueConverter"/> is typed
+/// non-nullable, and the null it forgives is exactly "no duration".</para>
+/// </summary>
+public sealed partial class NullableHoursConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language)
+        => value is double hours ? hours : double.NaN;
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language)
+        => value is double hours && !double.IsNaN(hours) ? hours : null!;
+}
+
 /// <summary>One-line summary of a profile's video settings, for the list.</summary>
 public sealed partial class EncodingSummaryConverter : IValueConverter
 {

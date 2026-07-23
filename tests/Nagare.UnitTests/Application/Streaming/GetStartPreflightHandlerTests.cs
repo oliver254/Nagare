@@ -290,7 +290,9 @@ public sealed class GetStartPreflightHandlerTests
         => new(ffmpeg, ffprobe, ffmpeg ? "7.1" : null, nvenc, ffmpeg ? null : "ffmpeg not found.");
 
     private static SessionSnapshot Snapshot(SessionStatus status)
-        => new(SessionId.New(), status, Stats: null, HealthIndicator.Ok, ReconnectAttempts: 0, LastError: null);
+        => new(
+            SessionId.New(), status, Stats: null, HealthIndicator.Ok, ReconnectAttempts: 0, LastError: null,
+            PlannedEndsAt: null, StopReason: null);
 
     /// <summary>Healthy environment, empty selection, no session — each test overrides what it is about.</summary>
     private static Task<StartPreflight> Evaluate(
