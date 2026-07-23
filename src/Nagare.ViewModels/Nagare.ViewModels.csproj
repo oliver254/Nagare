@@ -17,7 +17,7 @@
     <PackageReference Include="BrilliantMediator" Version="3.0.0" />
 
     <!-- AddNagareViewModels() : enregistrement des ViewModels. -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
   </ItemGroup>
 
 </Project>

@@ -24,7 +24,12 @@ public partial class App : Microsoft.UI.Xaml.Application
     private readonly IHost _host;
 
     private Window? _window;
+
+    // TWO flags, and not one. "Shutdown started" is not the same thing as "the window may now go":
+    // between the two there are several seconds during which the window is still clickable. See
+    // OnMainWindowClosing.
     private bool _shuttingDown;
+    private bool _readyToClose;
 
     public App()
     {
@@ -113,14 +118,33 @@ public partial class App : Microsoft.UI.Xaml.Application
     /// exception used to escape from the finally block BEFORE <c>Close()</c> was reached: clicking
     /// the cross stopped the host but never closed the window, and the application hung, alive,
     /// forever. Constaté en lançant réellement l'app.</para>
+    ///
+    /// <para><b>Why the close is cancelled on EVERY pass but the last one.</b> The shutdown takes
+    /// seconds — a 5s grace period on ffmpeg, and up to HostOptions.ShutdownTimeout beyond that — and
+    /// the window stays clickable throughout. A user who clicks the cross again, thinking nothing
+    /// happened, would otherwise close it for real: the message loop ends, the process dies, and the
+    /// pending continuation below never reaches the coordinator's Kill — FFMPEG SURVIVES, orphaned
+    /// and still broadcasting. SPEC §5 forbids exactly that. Hence a second flag: _shuttingDown says
+    /// "in progress, keep cancelling", _readyToClose says "we are the ones closing it, let it go".</para>
     /// </summary>
     private async void OnMainWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
     {
-        if (_shuttingDown)
-            return;   // second pass: shutdown is done, let the window go
+        if (_readyToClose)
+            return;   // our own Close() below: shutdown is over, let the window go
 
-        args.Cancel = true;   // must be set before the first await
+        // Set before any await, and on every pass: a second click during the shutdown must be
+        // absorbed, not honoured.
+        args.Cancel = true;
+
+        if (_shuttingDown)
+            return;   // already under way — do not start a second shutdown
+
         _shuttingDown = true;
+
+        // Resolved NOW, while the provider is still alive. Resolving it in the catch below would run
+        // AFTER the inner finally has disposed the provider, and GetRequiredService would throw
+        // ObjectDisposedException from an async void — losing the very error we were reporting.
+        var logger = _host.Services.GetRequiredService<ILogger<App>>();
 
         try
         {
@@ -140,13 +164,13 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         catch (Exception ex)
         {
-            _host.Services.GetRequiredService<ILogger<App>>()
-                .LogError(ex, "Error while shutting the host down.");
+            logger.LogError(ex, "Error while shutting the host down.");
         }
         finally
         {
             // Whatever happened above, the window MUST close: an application that refuses to die is
             // worse than one that dies badly.
+            _readyToClose = true;
             _window?.Close();
         }
     }
