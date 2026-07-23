@@ -292,17 +292,24 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Le channel et le fichier de la diffusion EN COURS, capturés au démarrage
+                             (LiveChannelName / LiveInputFilePath) — pas la sélection, qui est vide
+                             sur une page reconstruite pendant que ffmpeg tourne, et que l'utilisateur
+                             reste libre de changer. Repliés quand ils sont inconnus : mieux vaut ne
+                             rien dire qu'afficher un blanc sous « En direct ». -->
                         <TextBlock
                             VerticalAlignment="Center"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Text="{x:Bind ViewModel.SelectedChannel.Name, Mode=OneWay}" />
+                            Visibility="{x:Bind ViewModel.LiveChannelName, Converter={StaticResource NotNullToVisibility}, Mode=OneWay}"
+                            Text="{x:Bind ViewModel.LiveChannelName, Mode=OneWay}" />
                     </StackPanel>
 
                     <TextBlock
                         Style="{StaticResource CaptionTextBlockStyle}"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         TextTrimming="CharacterEllipsis"
-                        Text="{x:Bind ViewModel.InputFilePath, Mode=OneWay}" />
+                        Visibility="{x:Bind ViewModel.LiveInputFilePath, Converter={StaticResource NotNullToVisibility}, Mode=OneWay}"
+                        Text="{x:Bind ViewModel.LiveInputFilePath, Mode=OneWay}" />
 
                     <!-- Miller : cinq nombres nus deviennent cinq tuiles étiquetées. -->
                     <StackPanel Orientation="Horizontal" Spacing="8">

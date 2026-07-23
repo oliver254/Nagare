@@ -21,6 +21,27 @@ public sealed partial class NotNullToBooleanConverter : IValueConverter
 }
 
 /// <summary>
+/// Resolves a Fluent theme brush by key, with a plain colour as a last resort.
+///
+/// <para>Fully qualified: inside Nagare.WinApp.*, a bare "Application" resolves to the
+/// Nagare.Application NAMESPACE, not to the WinUI type.</para>
+///
+/// <para><b>A brush obtained here does NOT follow a theme change on its own.</b> Unlike a
+/// <c>{ThemeResource}</c> in markup, this returns the instance that belongs to the theme in force at
+/// the moment of the call, and assigning it to a property is a plain assignment the framework will
+/// not revisit. Every page whose visuals go through a converter therefore calls
+/// <c>Bindings.Update()</c> on <c>ActualThemeChanged</c> — without it, switching Windows to dark mode
+/// leaves the health badge painted for the light one.</para>
+/// </summary>
+internal static class ThemeBrushes
+{
+    public static Brush Resolve(string key, Windows.UI.Color fallback)
+        => Microsoft.UI.Xaml.Application.Current.Resources.TryGetValue(key, out var brush) && brush is Brush themed
+            ? themed
+            : new SolidColorBrush(fallback);
+}
+
+/// <summary>
 /// Health indicator (SPEC §6) applied to a live statistic: an unhealthy value is coloured, a healthy
 /// one is not. Colouring "everything is fine" in green too would spend the eye's attention on the
 /// normal case — and by the Von Restorff effect, make the anomaly harder to spot, not easier.
@@ -31,22 +52,12 @@ public sealed partial class NotNullToBooleanConverter : IValueConverter
 public sealed partial class HealthToBrushConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, string language)
-        => ThemeBrush(
+        => ThemeBrushes.Resolve(
             value is true ? "SystemFillColorCautionBrush" : "TextFillColorPrimaryBrush",
             value is true ? Colors.Orange : Colors.Gray);
 
     public object ConvertBack(object value, Type targetType, object parameter, string language)
         => throw new NotSupportedException();
-
-    /// <summary>
-    /// Resolves a Fluent theme brush by key, with a plain colour as a last resort. Fully qualified:
-    /// inside Nagare.WinApp.*, a bare "Application" resolves to the Nagare.Application NAMESPACE,
-    /// not to the WinUI type.
-    /// </summary>
-    internal static Brush ThemeBrush(string key, Windows.UI.Color fallback)
-        => Microsoft.UI.Xaml.Application.Current.Resources.TryGetValue(key, out var brush) && brush is Brush themed
-            ? themed
-            : new SolidColorBrush(fallback);
 }
 
 /// <summary>bool -> Visibility. x:Bind does not convert it on its own.</summary>
@@ -101,8 +112,8 @@ public sealed partial class NotConverter : IValueConverter
 /// parameter for the soft fill of a badge, anything else for the foreground/stroke.
 ///
 /// This is the ONLY place where a session state becomes a colour: the ViewModel stays free of any
-/// WinUI type, and every colour comes from the theme — none is hard-coded, so light, dark and high
-/// contrast follow the system on their own.
+/// WinUI type, and every colour comes from the theme — none is hard-coded. Following a theme change
+/// at runtime takes one more thing, see <see cref="ThemeBrushes"/>.
 /// </summary>
 public sealed partial class SeverityToBrushConverter : IValueConverter
 {
@@ -119,7 +130,7 @@ public sealed partial class SeverityToBrushConverter : IValueConverter
             _ => (background ? "LayerFillColorDefaultBrush" : "TextFillColorSecondaryBrush", Colors.Gray)
         };
 
-        return HealthToBrushConverter.ThemeBrush(key, fallback);
+        return ThemeBrushes.Resolve(key, fallback);
     }
 
     private static string Semantic(string name, bool background)
@@ -186,7 +197,7 @@ public sealed partial class KeyStateConverter : IValueConverter
 public sealed partial class KeyStateToBrushConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, string language)
-        => HealthToBrushConverter.ThemeBrush(
+        => ThemeBrushes.Resolve(
             value is true ? "TextFillColorSecondaryBrush" : "SystemFillColorCautionBrush",
             value is true ? Colors.Gray : Colors.Orange);
 

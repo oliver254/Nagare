@@ -121,6 +121,12 @@ public sealed class ProfilesViewModelTests
         Assert.Equal("ultrafast", vm.EditPreset);   // an nvenc preset would no longer be valid (E6)
     }
 
+    /// <summary>
+    /// Edit as the FIRST action, on an H264Nvenc profile — which is also EditCodec's default, so
+    /// assigning it raises no change and the codec hook does not fire. This is why Populate calls
+    /// RefreshPresets explicitly even though the hook usually does: without it AvailablePresets would
+    /// still be empty here and "p2" would be dropped for not being in the list.
+    /// </summary>
     [Fact]
     public async Task Editing_loads_every_field_of_the_profile()
     {

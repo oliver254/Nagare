@@ -9,6 +9,7 @@ using Nagare.Application.Media;
 using Nagare.Application.Profiles;
 using Nagare.Application.Streaming;
 using Nagare.Domain.Common;
+using Nagare.Domain.Profiles;
 using Nagare.Domain.Sessions;
 using Nagare.ViewModels.Abstractions;
 
@@ -76,6 +77,25 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
     private SessionSnapshot? _lastObserved;
     private DateTimeOffset _lastPublishedAt;
 
+    /// <summary>
+    /// Drop counting across the whole broadcast. UI thread only.
+    ///
+    /// <para>ffmpeg counts drops per PROCESS, and every reconnection starts a new one — the
+    /// coordinator even forgets the corpse's stats on purpose, so its health indicator is not fooled
+    /// by a counter that restarts at zero. Reporting <c>snapshot.Stats.DroppedFrames</c> as the
+    /// session total therefore announced "0 image perdue" for a broadcast that lost thousands before
+    /// dropping the connection — the one case the end-of-session report exists for.</para>
+    ///
+    /// <para>A sample smaller than the previous one is a restart: the peak reached by the process
+    /// that died is banked, and counting resumes from the new one.</para>
+    /// </summary>
+    private int _dropsBanked;
+
+    private int _lastDropSample;
+
+    /// <summary>Id of the session the tally above belongs to. UI thread only.</summary>
+    private SessionId? _lastApplied;
+
     public DashboardViewModel(
         IMediator mediator,
         ISessionMonitor monitor,
@@ -140,7 +160,7 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
     // A disabled button that does not say what is missing is the worst hole of this page. The four
     // flags below and <see cref="StartHint"/> close it: TOGETHER with EnvironmentIssue and
     // MediaError they cover all ten StartBlockReason values, so a blocked start always shows a
-    // reason without a click. They translate the verdict; they do not re-decide it.
+    // reason without a click. They report the FACTS; they do not decide anything.
 
     [ObservableProperty]
     private bool _isEnvironmentReady;
@@ -179,15 +199,30 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
     [NotifyCanExecuteChangedFor(nameof(StartCommand), nameof(StopCommand))]
     private bool _isSessionActive;
 
-    [ObservableProperty]
-    private string _statusLabel = "Aucune session";
-
     /// <summary>
-    /// The word shown on the health badge. Same thing as <see cref="StatusLabel"/> everywhere except
-    /// on air, where the streamer's word wins: "En direct", not "En cours".
+    /// The word shown on the health badge. <see cref="LabelOf"/> everywhere except on air, where the
+    /// streamer's word wins: "En direct", not "En cours".
     /// </summary>
     [ObservableProperty]
     private string _statusHeadline = "Aucune session";
+
+    /// <summary>
+    /// Channel and file of the RUNNING broadcast — captured at start, not read from the selection.
+    ///
+    /// <para>The selection belongs to the user and is empty on a page that was rebuilt while ffmpeg
+    /// kept going (navigate away and back: a new ViewModel, then rehydration from
+    /// <see cref="ISessionMonitor"/>). Binding the health card to it left "En direct" above a blank
+    /// channel and a blank path — the two questions that card exists to answer.</para>
+    ///
+    /// <para>Null when the session was not started from this instance: the card then says nothing
+    /// rather than something stale. <see cref="SessionSnapshot"/> carries neither, so recovering them
+    /// on rehydration needs an Application change — see docs/design/ux-ui.md §9.</para>
+    /// </summary>
+    [ObservableProperty]
+    private string? _liveChannelName;
+
+    [ObservableProperty]
+    private string? _liveInputFilePath;
 
     /// <summary>How loud that badge reads. Paired with the word above — never colour alone.</summary>
     [ObservableProperty]
@@ -301,8 +336,13 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
         Logs.Clear();
         _incomingLogs.Clear();
 
+        // Captured BEFORE the dispatch: from here on the health card answers "vers quoi ? avec quel
+        // fichier ?" from what was actually launched, not from a selection the user may still change.
+        LiveChannelName = SelectedChannel!.Name;
+        LiveInputFilePath = InputFilePath;
+
         await _mediator.DispatchAsync<StartStreamCommand, SessionId>(
-            new StartStreamCommand(SelectedProfile!.Id, SelectedChannel!.Id, InputFilePath!));
+            new StartStreamCommand(SelectedProfile!.Id, SelectedChannel.Id, InputFilePath!));
     });
 
     [RelayCommand(CanExecute = nameof(CanStop))]
@@ -331,29 +371,49 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
     partial void OnIsSessionActiveChanged(bool value) => QueuePreflightRefresh();
 
     /// <summary>The sentences shown on screen follow the verdict — they are its translation.</summary>
-    partial void OnPreflightChanged(StartPreflight value)
+    partial void OnPreflightChanged(StartPreflight value) => ApplyVerdict(value.Reason);
+
+    /// <summary>
+    /// Puts the verdict on screen. Called EXPLICITLY after every assignment of
+    /// <see cref="Preflight"/>, and not only from its changed-hook.
+    ///
+    /// <para><see cref="StartPreflight"/> is a record, so a new verdict equal to the previous one
+    /// never raises PropertyChanged and the hook never runs. That is invisible when the reason
+    /// changes — and silent when it does not: picking a file while no profile is selected re-answers
+    /// <c>ProfileNotSelected</c>, so the checklist kept "Fichier" unticked for a file that was
+    /// loaded and valid. The sentences are cheap and idempotent; running them twice costs nothing,
+    /// not running them at all cost the whole feature.</para>
+    /// </summary>
+    private void ApplyVerdict(StartBlockReason reason)
     {
-        EnvironmentIssue = EnvironmentMessage(value.Reason);
-        MediaError = MediaMessage(value.Reason);
-        StartHint = StartHintMessage(value.Reason);
-        RefreshChecklist(value.Reason);
+        EnvironmentIssue = EnvironmentMessage(reason);
+        MediaError = MediaMessage(reason);
+        StartHint = StartHintMessage(reason);
+        RefreshChecklist();
     }
 
     /// <summary>
-    /// The four launch conditions, as facts rather than as a verdict: three of them are plain
-    /// selection state, the fourth reads the cached environment report. Nothing here decides whether
-    /// a start is allowed — <see cref="Preflight"/> alone does, and it is what drives the button.
+    /// The four launch conditions, read from the FACTS they each stand for — not from the verdict.
+    ///
+    /// <para>The preflight reports one reason, the first that holds, so deriving four boxes from it
+    /// made a box tick green whenever another condition won the race: a machine without NVENC and an
+    /// unreadable file reports <c>InputFileUnreadable</c>, and "Environnement" then ticked although
+    /// the selected profile cannot encode here. Every fact below is available locally; none of them
+    /// needs the arbitration.</para>
+    ///
+    /// <para>Nothing here decides whether a start is allowed — <see cref="Preflight"/> alone does,
+    /// and it is what drives the button.</para>
     /// </summary>
-    private void RefreshChecklist(StartBlockReason reason)
+    private void RefreshChecklist()
     {
         IsEnvironmentReady = _environment is { FfmpegAvailable: true, FfprobeAvailable: true }
-            && reason is not StartBlockReason.NvencUnavailable;
+            && (SelectedProfile?.Video.Codec.RequiresNvenc() is not true || _environment.NvencAvailable);
 
         IsProfileReady = SelectedProfile is not null;
         IsChannelReady = SelectedChannel is not null;
 
         IsFileReady = !string.IsNullOrWhiteSpace(InputFilePath)
-            && reason is not (StartBlockReason.InputFileNotFound or StartBlockReason.InputFileUnreadable);
+            && _media is { Exists: true, Readable: true, Error: null };
     }
 
     /// <summary>
@@ -391,6 +451,9 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
             Preflight = StartPreflight.NotChecked;
             ErrorMessage = ex.Message;
         }
+
+        // Unconditional: a verdict equal to the previous one raises nothing — see ApplyVerdict.
+        ApplyVerdict(Preflight.Reason);
     }
 
     /// <summary>
@@ -547,8 +610,14 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
         // the end-of-session summary, and it is visible for one call only.
         var wasActive = IsSessionActive;
 
+        // Same reason, one step earlier: a session that is REPLACED (a new id) must not inherit the
+        // previous one's drop tally.
+        if (_lastApplied is { } applied && applied != snapshot.Id)
+            ResetDropTally();
+
+        _lastApplied = snapshot.Id;
+
         Status = snapshot.Status;
-        StatusLabel = LabelOf(snapshot.Status);
 
         // "Active" is the domain's word, not ours (SessionStatusExtensions): the coordinator refuses
         // a second start on that very predicate. Restating it here as "Starting or Running or
@@ -561,7 +630,7 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
         Fps = snapshot.Stats?.Fps ?? 0;
         BitrateKbps = snapshot.Stats?.BitrateKbps ?? 0;
         Speed = snapshot.Stats?.Speed ?? 0;
-        DroppedFrames = snapshot.Stats?.DroppedFrames ?? 0;
+        DroppedFrames = AccumulateDrops(snapshot.Stats?.DroppedFrames);
 
         StatusHeadline = HeadlineOf(snapshot.Status);
         Severity = SeverityOf(snapshot.Status, IsHealthWarning);
@@ -569,7 +638,30 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
         if (IsSessionActive)
             SessionSummary = null;            // a new broadcast buries the previous one's report
         else if (wasActive)
-            SessionSummary = Summarize(snapshot);
+            SessionSummary = Summarize(snapshot, DroppedFrames);
+    }
+
+    /// <summary>
+    /// Total drops of the broadcast, across the successive ffmpeg processes — see
+    /// <see cref="_dropsBanked"/>. A null sample is a snapshot with no stats at all (the coordinator
+    /// forgets them while reconnecting): it says nothing about the count, so it changes nothing.
+    /// </summary>
+    private int AccumulateDrops(int? sample)
+    {
+        if (sample is not { } drops)
+            return _dropsBanked + _lastDropSample;
+
+        if (drops < _lastDropSample)
+            _dropsBanked += _lastDropSample;   // the process that held that peak is gone
+
+        _lastDropSample = drops;
+        return _dropsBanked + drops;
+    }
+
+    private void ResetDropTally()
+    {
+        _dropsBanked = 0;
+        _lastDropSample = 0;
     }
 
     /// <summary>What the badge says. Only <c>Running</c> differs from <see cref="LabelOf"/>.</summary>
@@ -593,9 +685,10 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
     /// The last thing seen of a broadcast. A failure names its cause — the domain's own text, never
     /// re-authored here.
     /// </summary>
-    private static string Summarize(SessionSnapshot snapshot)
+    /// <param name="drops">Total of the whole broadcast — see <see cref="AccumulateDrops"/>. Taking
+    /// it from the snapshot would report the LAST ffmpeg process's counter as the session's.</param>
+    private static string Summarize(SessionSnapshot snapshot, int drops)
     {
-        var drops = snapshot.Stats?.DroppedFrames ?? 0;
         var tail = $"{Plural(drops, "image perdue", "images perdues")}, "
             + $"{Plural(snapshot.ReconnectAttempts, "reconnexion", "reconnexions")}.";
 

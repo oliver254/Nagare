@@ -7,8 +7,10 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
 
-    <!-- Jakob : le matériau de fenêtre de Windows 11. Les pages ne peignent aucun fond, c'est le
-         Mica qui transparaît sous elles. Sur un Windows 10 il ne s'active simplement pas. -->
+    <!-- Jakob : le matériau de fenêtre de Windows 11. Il transparaît sous la barre de titre et sous
+         le volet du NavigationView, dont le fond est prévu pour lui. La ZONE DE CONTENU garde son
+         fond de page Fluent opaque (NavigationViewContentBackground) : les cartes y sont posées sur
+         une surface, pas sur le Mica. Sur un Windows 10 le matériau ne s'active simplement pas. -->
     <Window.SystemBackdrop>
         <MicaBackdrop />
     </Window.SystemBackdrop>

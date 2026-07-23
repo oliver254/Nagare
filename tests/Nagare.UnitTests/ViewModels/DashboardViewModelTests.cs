@@ -130,7 +130,7 @@ public sealed class DashboardViewModelTests
         monitor.RaiseChanged(Snapshot(SessionStatus.Reconnecting, fps: 30, reconnectAttempts: 1));
 
         Assert.Equal(SessionStatus.Reconnecting, vm.Status);
-        Assert.Equal("Reconnexion", vm.StatusLabel);
+        Assert.Equal("Reconnexion", vm.StatusHeadline);
         Assert.Equal(1, vm.ReconnectAttempts);
         Assert.True(vm.IsSessionActive);
         Assert.True(vm.StopCommand.CanExecute(null));
@@ -352,6 +352,12 @@ public sealed class DashboardViewModelTests
     {
         var (vm, _, _, _, _) = await CreateLoadedAsync();
 
+        // Cleared first, and asserted cleared: StartPreflight is a record, so assigning a verdict
+        // equal to the one already in place raises nothing and the sentences would simply be the
+        // ones left over from load — the test would pass without the assignment doing anything.
+        vm.Preflight = StartPreflight.Ready;
+        Assert.Null(vm.EnvironmentIssue ?? vm.MediaError ?? vm.StartHint);
+
         vm.Preflight = new StartPreflight(reason);
 
         Assert.False(vm.StartCommand.CanExecute(null));
@@ -392,6 +398,51 @@ public sealed class DashboardViewModelTests
 
         await vm.PickFileCommand.ExecuteAsync(null);
         Assert.True(vm.IsFileReady);
+    }
+
+    /// <summary>
+    /// The drop zone is the first thing on the page, so choosing the file BEFORE the profile is the
+    /// natural order — and it is the one that used to break. The preflight re-answers
+    /// <c>ProfileNotSelected</c>, a verdict equal to the one already held; the record raises no
+    /// change, and the checklist was never told about the file.
+    /// </summary>
+    [Fact]
+    public async Task A_file_chosen_before_the_profile_still_ticks_the_file_box()
+    {
+        var (vm, _, _, _, _) = await CreateLoadedAsync();
+
+        await vm.PickFileCommand.ExecuteAsync(null);
+
+        Assert.Equal(InputFile, vm.InputFilePath);
+        Assert.True(vm.IsFileReady);
+        Assert.False(vm.IsProfileReady);
+    }
+
+    /// <summary>
+    /// The preflight reports ONE reason, the first that holds. Deriving the boxes from it made them
+    /// lie whenever another condition won the race.
+    /// </summary>
+    [Fact]
+    public async Task A_box_reports_its_own_condition_not_the_winning_reason()
+    {
+        var report = new FfmpegEnvironmentReport(
+            FfmpegAvailable: true, FfprobeAvailable: true, FfmpegVersion: "7.1",
+            NvencAvailable: false, Error: null);
+
+        var broken = new MediaValidationResult(
+            Exists: true, Readable: false, Duration: null, Width: null, Height: null, Fps: null,
+            VideoCodec: null, AudioCodec: null, Error: null);
+
+        var (vm, _, _, _, _) = await CreateLoadedAsync(environment: report, media: broken);
+
+        vm.SelectedProfile = vm.Profiles.Single();   // an h264_nvenc profile, on a machine without it
+        await vm.PickFileCommand.ExecuteAsync(null);
+
+        // The unreadable file is reported first, so NvencUnavailable never surfaces as the reason.
+        Assert.Equal(StartBlockReason.InputFileUnreadable, vm.Preflight.Reason);
+
+        Assert.False(vm.IsFileReady);
+        Assert.False(vm.IsEnvironmentReady);   // the encoder is still missing, whatever won the race
     }
 
     [Fact]
@@ -486,6 +537,61 @@ public sealed class DashboardViewModelTests
         Assert.Equal(StatusSeverity.Neutral, vm.Severity);
     }
 
+    /// <summary>
+    /// ffmpeg counts drops per PROCESS and a reconnection starts a new one, so the last snapshot's
+    /// counter is not the broadcast's total. Reporting it as such announced "0 image perdue" for the
+    /// session that lost the most — the one the report exists for.
+    /// </summary>
+    [Fact]
+    public async Task Drops_survive_a_reconnection_in_the_end_of_session_report()
+    {
+        var (vm, time, monitor, _, _) = await CreateLoadedAsync();
+
+        monitor.RaiseChanged(Snapshot(SessionStatus.Running, fps: 30, drops: 1200));
+        Assert.Equal(1200, vm.DroppedFrames);
+
+        // The connection breaks: the coordinator forgets the dead process's stats on purpose.
+        monitor.RaiseChanged(Snapshot(SessionStatus.Reconnecting, reconnectAttempts: 1, withStats: false));
+        Assert.Equal(1200, vm.DroppedFrames);   // a snapshot without stats says nothing about drops
+
+        // The relaunched ffmpeg counts from zero again.
+        time.Advance(DashboardViewModel.StatsThrottle);
+        monitor.RaiseChanged(Snapshot(SessionStatus.Running, fps: 30, reconnectAttempts: 1, drops: 5));
+        Assert.Equal(1205, vm.DroppedFrames);
+
+        monitor.RaiseChanged(Snapshot(SessionStatus.Stopped, reconnectAttempts: 1, drops: 5));
+
+        Assert.Contains("1205 images perdues", vm.SessionSummary);
+        Assert.Contains("1 reconnexion", vm.SessionSummary);
+    }
+
+    /// <summary>
+    /// The health card answers "vers quoi ? avec quel fichier ?" — from what was LAUNCHED, not from
+    /// the selection, which the user stays free to change while the broadcast runs.
+    /// </summary>
+    [Fact]
+    public async Task The_live_card_keeps_the_channel_the_broadcast_was_started_with()
+    {
+        var (vm, _, monitor, _, _) = await CreateLoadedAsync();
+
+        Assert.Null(vm.LiveChannelName);   // nothing launched: the card says nothing rather than a blank
+
+        vm.SelectedProfile = vm.Profiles.Single();
+        vm.SelectedChannel = vm.Channels.Single();
+        await vm.PickFileCommand.ExecuteAsync(null);
+        await vm.StartCommand.ExecuteAsync(null);
+
+        monitor.RaiseChanged(Snapshot(SessionStatus.Running, fps: 30));
+
+        Assert.Equal(TestChannel.Name, vm.LiveChannelName);
+        Assert.Equal(InputFile, vm.LiveInputFilePath);
+
+        // The selection is the user's and may move; what is on air does not.
+        vm.SelectedChannel = null;
+
+        Assert.Equal(TestChannel.Name, vm.LiveChannelName);
+    }
+
     [Fact]
     public async Task A_failed_session_reports_the_reason_the_domain_gave()
     {
@@ -567,16 +673,24 @@ public sealed class DashboardViewModelTests
         NvencAvailable: true,
         Error: null);
 
+    /// <param name="drops">Counter of the CURRENT ffmpeg process — it restarts at zero after each
+    /// reconnection, which is the whole difficulty of the end-of-session tally.</param>
+    /// <param name="withStats">False reproduces a snapshot the coordinator publishes with no stats
+    /// at all, as it does while reconnecting.</param>
     private static SessionSnapshot Snapshot(
         SessionStatus status,
         double fps = 0,
         double speed = 1.0,
         int reconnectAttempts = 0,
-        HealthIndicator health = HealthIndicator.Ok)
+        HealthIndicator health = HealthIndicator.Ok,
+        int drops = 0,
+        bool withStats = true)
         => new(
             TestSession,
             status,
-            new FfmpegStats(Frame: 100, Fps: fps, BitrateKbps: 3000, Speed: speed, DroppedFrames: 0, DupFrames: 0, Time: TimeSpan.FromSeconds(5)),
+            withStats
+                ? new FfmpegStats(Frame: 100, Fps: fps, BitrateKbps: 3000, Speed: speed, DroppedFrames: drops, DupFrames: 0, Time: TimeSpan.FromSeconds(5))
+                : null,
             health,
             reconnectAttempts,
             LastError: null);

@@ -13,7 +13,8 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!-- Common Region : une carte ceinturée par un trait de 1 px, pas par une ombre. Les cartes
-         sont posées à plat sur le Mica ; seul ce qui flotte (dialogue, flyout) porte une ombre. -->
+         sont posées à plat sur le fond de page ; seul ce qui flotte (dialogue, flyout) porte une
+         ombre. -->
     <Style x:Key="NagareCardStyle" TargetType="Border">
         <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />

@@ -20,6 +20,12 @@ namespace Nagare.ViewModels;
 /// </summary>
 public sealed partial class ProfilesViewModel : ViewModelBase
 {
+    // Shown in the width/height/fps boxes while "Forcer…" is off, so the field is never blank and
+    // turning the switch on starts from something sane. They are UI defaults, not domain rules.
+    private const double DefaultWidth = 1920;
+    private const double DefaultHeight = 1080;
+    private const double DefaultFps = 30;
+
     private readonly IMediator _mediator;
 
     public ProfilesViewModel(IMediator mediator) => _mediator = mediator;
@@ -158,10 +164,10 @@ public sealed partial class ProfilesViewModel : ViewModelBase
         EditGopSize = 60;
         EditKeyintMin = 60;
         EditHasResolution = false;
-        EditWidth = 1920;
-        EditHeight = 1080;
+        EditWidth = DefaultWidth;
+        EditHeight = DefaultHeight;
         EditHasFps = false;
-        EditFps = 30;
+        EditFps = DefaultFps;
         EditAudioCodec = AudioCodec.Aac;
         EditAudioBitrateKbps = 128;
         EditSampleRateHz = 48000;
@@ -183,29 +189,44 @@ public sealed partial class ProfilesViewModel : ViewModelBase
 
         EditName = profile.Name;
 
-        EditCodec = profile.Video.Codec;
-        RefreshPresets();
-        EditPreset = profile.Video.Preset;   // after RefreshPresets: the list must hold the value
-        EditRateControl = profile.Video.RateControl;
-        EditBitrateKbps = profile.Video.BitrateKbps;
-        EditMaxrateKbps = profile.Video.MaxrateKbps;
-        EditBufsizeKbps = profile.Video.BufsizeKbps;
-        EditGopSize = profile.Video.GopSize;
-        EditKeyintMin = profile.Video.KeyintMin;
+        Populate(profile.Video, profile.Audio, profile.Input);
+    }
 
-        EditHasResolution = profile.Video.Resolution is not null;
-        EditWidth = profile.Video.Resolution?.Width ?? 1920;
-        EditHeight = profile.Video.Resolution?.Height ?? 1080;
+    /// <summary>
+    /// Pours a set of value objects into the editor fields. The ONE place that knows how a profile
+    /// becomes a form — an existing profile and a template are the same operation, and they were two
+    /// copies of eighteen assignments that had already drifted apart: the copy used by the templates
+    /// fell back to whatever the fields happened to hold, so picking a template without a resolution
+    /// after one that had it left the previous template's dimensions behind.
+    ///
+    /// <para>Order matters: the codec first, then the preset list it commands, then the preset — set
+    /// the other way round and the value is dropped for not being in the list yet.</para>
+    /// </summary>
+    private void Populate(EncodingSettings video, AudioSettings audio, InputOptions input)
+    {
+        EditCodec = video.Codec;
+        RefreshPresets();                    // no-op when the codec hook above already did it
+        EditPreset = video.Preset;           // after RefreshPresets: the list must hold the value
+        EditRateControl = video.RateControl;
+        EditBitrateKbps = video.BitrateKbps;
+        EditMaxrateKbps = video.MaxrateKbps;
+        EditBufsizeKbps = video.BufsizeKbps;
+        EditGopSize = video.GopSize;
+        EditKeyintMin = video.KeyintMin;
 
-        EditHasFps = profile.Video.Fps is not null;
-        EditFps = profile.Video.Fps ?? 30;
+        EditHasResolution = video.Resolution is not null;
+        EditWidth = video.Resolution?.Width ?? DefaultWidth;
+        EditHeight = video.Resolution?.Height ?? DefaultHeight;
 
-        EditAudioCodec = profile.Audio.Codec;
-        EditAudioBitrateKbps = profile.Audio.BitrateKbps;
-        EditSampleRateHz = profile.Audio.SampleRateHz;
+        EditHasFps = video.Fps is not null;
+        EditFps = video.Fps ?? DefaultFps;
 
-        EditReadAtNativeRate = profile.Input.ReadAtNativeRate;
-        EditLoopInfinitely = profile.Input.LoopInfinitely;
+        EditAudioCodec = audio.Codec;
+        EditAudioBitrateKbps = audio.BitrateKbps;
+        EditSampleRateHz = audio.SampleRateHz;
+
+        EditReadAtNativeRate = input.ReadAtNativeRate;
+        EditLoopInfinitely = input.LoopInfinitely;
     }
 
     /// <summary>
@@ -258,9 +279,8 @@ public sealed partial class ProfilesViewModel : ViewModelBase
     partial void OnEditCodecChanged(VideoCodec value) => RefreshPresets();
 
     /// <summary>
-    /// Pours a template into the editor. Same order as <see cref="Edit"/>: the codec first, then the
-    /// preset list it commands, then the preset — set the other way round and the value is dropped
-    /// for not being in the list yet.
+    /// Pours a template into the editor — the same fill as <see cref="Edit"/>, see
+    /// <see cref="Populate"/>.
     ///
     /// <para>The name is filled only while it is still blank: a template applied to a profile the
     /// user has already named must not rename it behind their back.</para>
@@ -273,45 +293,31 @@ public sealed partial class ProfilesViewModel : ViewModelBase
         if (string.IsNullOrWhiteSpace(EditName))
             EditName = value.Name;
 
-        EditCodec = value.Video.Codec;
-        RefreshPresets();
-        EditPreset = value.Video.Preset;
-        EditRateControl = value.Video.RateControl;
-        EditBitrateKbps = value.Video.BitrateKbps;
-        EditMaxrateKbps = value.Video.MaxrateKbps;
-        EditBufsizeKbps = value.Video.BufsizeKbps;
-        EditGopSize = value.Video.GopSize;
-        EditKeyintMin = value.Video.KeyintMin;
-
-        EditHasResolution = value.Video.Resolution is not null;
-        EditWidth = value.Video.Resolution?.Width ?? EditWidth;
-        EditHeight = value.Video.Resolution?.Height ?? EditHeight;
-
-        EditHasFps = value.Video.Fps is not null;
-        EditFps = value.Video.Fps ?? EditFps;
-
-        EditAudioCodec = value.Audio.Codec;
-        EditAudioBitrateKbps = value.Audio.BitrateKbps;
-        EditSampleRateHz = value.Audio.SampleRateHz;
-
-        EditReadAtNativeRate = value.Input.ReadAtNativeRate;
-        EditLoopInfinitely = value.Input.LoopInfinitely;
+        Populate(value.Video, value.Audio, value.Input);
     }
 
     /// <summary>
     /// nvenc and libx264 do not share a single preset name. Switching codec therefore reloads the
     /// list from the domain and drops a preset that no longer exists.
     ///
-    /// Clearing the collection makes the bound ComboBox push a null selection back into
-    /// <see cref="EditPreset"/> — hence the emptiness check before picking a fallback.
+    /// <para>It is called BOTH from the <see cref="EditCodec"/> hook and explicitly by
+    /// <see cref="Populate"/> and <see cref="New"/>, and that redundancy is deliberate: the hook does
+    /// not fire when the codec is assigned its current value, which is exactly the case on the first
+    /// <c>Modifier</c> of an <c>H264Nvenc</c> profile — <c>AvailablePresets</c> would still be empty
+    /// and the preset would be dropped for not being in the list. So the guard is here instead: a
+    /// list already holding the right values is left ALONE, which spares the bound ComboBox a
+    /// pointless teardown and the null selection it pushes back on Clear().</para>
     /// </summary>
     private void RefreshPresets()
     {
         var presets = EncodingSettings.PresetsFor(EditCodec);
 
-        AvailablePresets.Clear();
-        foreach (var preset in presets)
-            AvailablePresets.Add(preset);
+        if (!AvailablePresets.SequenceEqual(presets))
+        {
+            AvailablePresets.Clear();
+            foreach (var preset in presets)
+                AvailablePresets.Add(preset);
+        }
 
         if (string.IsNullOrEmpty(EditPreset) || !presets.Contains(EditPreset))
             EditPreset = presets[0];

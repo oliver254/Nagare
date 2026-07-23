@@ -34,6 +34,7 @@ public sealed partial class DashboardPage : Page
 
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
+        ActualThemeChanged += OnThemeChanged;
     }
 
     public DashboardViewModel ViewModel { get; }
@@ -45,9 +46,20 @@ public sealed partial class DashboardPage : Page
     {
         Loaded -= OnLoaded;
         Unloaded -= OnUnloaded;
+        ActualThemeChanged -= OnThemeChanged;
 
         ViewModel.Dispose();
     }
+
+    /// <summary>
+    /// Re-runs the one-way bindings so the converter-produced colours follow the system theme.
+    ///
+    /// <para>A <c>{ThemeResource}</c> in markup is re-evaluated by the framework; a brush a converter
+    /// looked up and returned is not (see <c>ThemeBrushes</c>). Without this, switching Windows to
+    /// dark mode left the health badge and the speed/drops tiles painted for the light one — the very
+    /// accessibility guarantee docs/design/ux-ui.md §7 claims.</para>
+    /// </summary>
+    private void OnThemeChanged(FrameworkElement sender, object args) => Bindings.Update();
 
     // ------------------------------------------------------------------ drag & drop
 
@@ -65,16 +77,37 @@ public sealed partial class DashboardPage : Page
         e.DragUIOverride.Caption = "Diffuser cette vidéo";
     }
 
+    /// <summary>
+    /// The deferral is not optional. Awaiting inside a Drop handler returns to the framework, which
+    /// then considers the drop over and tears the operation down — <c>GetStorageItemsAsync</c> would
+    /// be racing an invalidated <c>DataView</c> and would either come back empty (a dropped file
+    /// silently ignored) or throw, and a throw out of an <c>async void</c> handler takes the window
+    /// with it. Holding a deferral keeps the operation alive until the read is done.
+    /// </summary>
     private async void OnFileDrop(object sender, DragEventArgs e)
     {
         if (ViewModel.IsSessionActive || !e.DataView.Contains(StandardDataFormats.StorageItems))
             return;
 
-        var items = await e.DataView.GetStorageItemsAsync();
+        var deferral = e.GetDeferral();
 
-        // A multi-selection drop takes the first file: one broadcast, one source (SPEC §5).
-        if (items.FirstOrDefault() is StorageFile file)
-            await ViewModel.UseFileCommand.ExecuteAsync(file.Path);
+        try
+        {
+            var items = await e.DataView.GetStorageItemsAsync();
+
+            // A multi-selection drop takes the first file: one broadcast, one source (SPEC §5).
+            if (items.FirstOrDefault() is StorageFile file)
+                await ViewModel.UseFileCommand.ExecuteAsync(file.Path);
+        }
+        catch (Exception ex)
+        {
+            // A shell that hands over something unreadable is not a reason to lose the window.
+            ViewModel.ErrorMessage = $"Fichier déposé illisible : {ex.Message}";
+        }
+        finally
+        {
+            deferral.Complete();
+        }
     }
 
     // -------------------------------------------------------------------- clipboard
@@ -92,7 +125,7 @@ public sealed partial class DashboardPage : Page
     private void OnCopyLogs(object sender, RoutedEventArgs e)
         => CopyToClipboard(string.Join(Environment.NewLine, ViewModel.Logs));
 
-    private static void CopyToClipboard(string? text)
+    private void CopyToClipboard(string? text)
     {
         if (string.IsNullOrEmpty(text))
             return;
@@ -100,7 +133,21 @@ public sealed partial class DashboardPage : Page
         var package = new DataPackage { RequestedOperation = DataPackageOperation.Copy };
         package.SetText(text);
 
-        Clipboard.SetContent(package);
+        try
+        {
+            Clipboard.SetContent(package);
+
+            // Without Flush the content belongs to THIS process and Windows discards it on exit —
+            // which is precisely the "copy the log, close Nagare, paste it in a report" flow the
+            // button exists for. Flush hands ownership to the system.
+            Clipboard.Flush();
+        }
+        catch (Exception ex)
+        {
+            // The clipboard is a shared, lockable resource: another process holding it makes these
+            // calls throw, and a copy button is not worth a crash.
+            ViewModel.ErrorMessage = $"Copie impossible : {ex.Message}";
+        }
     }
 
     // ------------------------------------------------------------------- navigation

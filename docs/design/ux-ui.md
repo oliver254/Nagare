@@ -72,12 +72,12 @@
 └────────────────┴─────────────────────────────────────────────┘
 ```
 
-Changements : icônes sur les 3 entrées, `SystemBackdrop="MicaBackdrop"`, `ExtendsContentIntoTitleBar` + wordmark **流 Nagare**, `IsPaneToggleButtonVisible` conservé. La 4ᵉ entrée n'est **pas** ajoutée (elle n'existe pas) : le rail est simplement dimensionné pour l'accueillir.
+Changements : icônes sur les 3 entrées, `SystemBackdrop="MicaBackdrop"`, wordmark **流 Nagare** en `PaneHeader`, `IsPaneToggleButtonVisible` conservé. *(`ExtendsContentIntoTitleBar` et la barre de titre personnalisée sont **reportés** : le wordmark tient dans le volet, et étendre le contenu dans la barre de titre demande de reprendre les zones de glisser et les boutons système — hors périmètre ici.)* La 4ᵉ entrée n'est **pas** ajoutée (elle n'existe pas) : le rail est simplement dimensionné pour l'accueillir.
 
 ### 4.2 Tableau de bord — état nominal (pas de diffusion)
 
 ```
-Tableau de bord                                    [⟳ Actualiser]
+Tableau de bord                                    (⟳ Actualiser : reporté)
 
 ┌─ Source ───────────────────────────────────────────────────┐
 │  ┌──────────────────────────────────────────────────────┐  │
@@ -100,7 +100,7 @@ Tableau de bord                                    [⟳ Actualiser]
 │  [ ▶  Démarrer ]        Choisissez un channel de diffusion.│  accent, 40 px
 └────────────────────────────────────────────────────────────┘
 
-┌─ Journal ffmpeg ──────────── [Auto-défilement] [Copier] ───┐
+┌─ Journal ffmpeg ─────────────────────────────── [Copier] ──┐
 │  (500 dernières lignes, Consolas 12, virtualisé)           │
 └────────────────────────────────────────────────────────────┘
 ```
@@ -117,14 +117,11 @@ La carte **Santé** n'apparaît qu'en session (Occam : rien à surveiller hors d
 │  │ 30     │ │ 6000   │ │ 1,02x  │ │ 0      │ │ 0        │  │  StatTile (A9)
 │  │ fps    │ │ kbits/s│ │ vitesse│ │ drops  │ │ reconnex.│  │
 │  └────────┘ └────────┘ └────────┘ └────────┘ └──────────┘  │
-└────────────────────────────────────────────────────────────┘
-
-┌─ Lancement ────────────────────────────────────────────────┐
 │                                     [ ■  Arrêter ]         │  aligné à DROITE (A11)
 └────────────────────────────────────────────────────────────┘
 ```
 
-`Démarrer` et `Arrêter` **n'existent jamais en même temps** : même emplacement logique, visibilité pilotée par `IsSessionActive`. Fitts est servi (grande cible, fin de parcours) et l'arrêt accidentel disparaît.
+`Démarrer` et `Arrêter` **n'existent jamais en même temps** : la carte *Lancement* et la carte *Santé* occupent la même place et se remplacent selon `IsSessionActive`. `Arrêter` est donc dans la carte *Santé*, aligné à droite — et non dans *Lancement*, qui est repliée pendant la diffusion. Fitts est servi (grande cible, fin de parcours) et l'arrêt accidentel disparaît.
 
 En session, les cartes *Source* et *Diffusion* passent en lecture seule (contrôles désactivés) : leur contenu reste la réponse à « vers quoi ? avec quel fichier ? ».
 
@@ -165,7 +162,7 @@ Profils d'encodage                    [+ Nouveau] [✎ Modifier] [🗑 Supprimer
 └──────────────────────────┘  └────────────────────────────────┘
 ```
 
-Les **modèles** ne sont qu'un pré-remplissage des champs `Edit*` : aucune règle n'est dupliquée, le domaine valide toujours (E1–E8) et l'utilisateur reste libre de tout modifier. Modèles proposés : *Twitch 1080p60 (NVENC)*, *Twitch 1080p60 (libx264)*, *YouTube 1440p60 (NVENC)*, *Basse latence 720p30 (libx264)* — deux familles pour que la machine sans NVENC ait toujours une réponse.
+Les **modèles** ne sont qu'un pré-remplissage des champs `Edit*` : aucune règle n'est dupliquée, le domaine valide toujours (E1–E8) et l'utilisateur reste libre de tout modifier. Modèles proposés : *Twitch 1080p60 (NVENC)*, *Twitch 1080p60 (libx264)*, *YouTube 1440p60 (NVENC)*, *Léger 720p30 (libx264)* — deux familles pour que la machine sans NVENC ait toujours une réponse.
 
 État vide : « Aucun profil d'encodage. Créez-en un pour décrire comment votre vidéo sera encodée. » + `[Nouveau]`.
 
@@ -205,7 +202,7 @@ Les trois messages d'environnement et les deux messages média sont **repris à 
 **Titres de carte :** Source · Diffusion · Lancement · Santé · Journal ffmpeg.
 **Checklist :** Environnement · Fichier · Profil · Channel.
 **Zone de dépôt :** « Déposez une vidéo ici, ou » + `Choisir un fichier…`.
-**Journal :** « Journal ffmpeg (500 dernières lignes) » · `Auto-défilement` · `Copier`.
+**Journal :** « Journal ffmpeg (500 dernières lignes) » · `Copier`. *(Le défilement automatique est livré, mais sans bascule : il passe par `ItemsUpdatingScrollMode="KeepLastItemInView"`, coalescé par le panneau. Un interrupteur viendra le jour où quelqu'un aura besoin de le figer.)*
 **Bilan d'arrêt :** « Diffusion arrêtée — 0 image perdue, 0 reconnexion. » / « Diffusion interrompue — *{LastError}* ».
 **Statuts** (inchangés, ils viennent de `LabelOf`) : Aucune session · Démarrage · En cours · Reconnexion · Arrêtée · Échec. Le badge de santé affiche **« En direct »** quand `Running` — le mot du streamer (Mental Model) — et conserve `StatusLabel` pour les autres états.
 
@@ -235,7 +232,7 @@ Les trois messages d'environnement et les deux messages média sont **repris à 
 
 ## 7. Accessibilité (§9 du brief)
 
-- `AutomationProperties.Name` sur **tout** bouton icône (`Copier`, `Actualiser`, `Nouveau`, `Modifier`, `Supprimer`) et sur la zone de dépôt.
+- `AutomationProperties.Name` sur **tout** bouton icône (`Copier`) et sur la zone de dépôt, les listes et les `ProgressRing`. `Nouveau` / `Modifier` / `Supprimer` sont livrés en boutons TEXTE : leur libellé est déjà leur nom accessible, un `AutomationProperties.Name` par-dessus ne ferait que le dupliquer.
 - `KeyboardAccelerator` : `Ctrl+O` choisir un fichier · `F5` démarrer · `Maj+F5` arrêter · `Ctrl+N` nouveau (Profils / Channels) · `Suppr` supprimer (avec dialogue). Parcours complet au clavier : rail → cartes → `Démarrer`.
 - Statut **jamais par la couleur seule** : icône + mot + couleur (A8).
 - Cibles ≥ 32 px ; boutons primaires 40 px.
@@ -251,8 +248,8 @@ Les trois messages d'environnement et les deux messages média sont **repris à 
 | `src/Nagare.WinApp/Views/DashboardPage.xaml{,.cs}` | modifié : cartes, checklist, tuiles, badge, drop, journal |
 | `src/Nagare.WinApp/Views/{Profiles,Channels}Page.xaml{,.cs}` | modifié : groupes, Avancé replié, états vides, `ContentDialog` |
 | `src/Nagare.WinApp/Converters/ValueConverters.cs` | modifié : converters d'état (visibilité inverse, sévérité, glyphe de statut) |
-| `src/Nagare.ViewModels/DashboardViewModel.cs` | modifié : `StartBlockMessage` + 4 booléens de checklist + bilan de session — **traduction du verdict, aucune règle** |
-| `src/Nagare.ViewModels/ProfilesViewModel.cs` | modifié : `ApplyTemplateCommand` (pré-remplissage des champs `Edit*`) |
+| `src/Nagare.ViewModels/DashboardViewModel.cs` | modifié : phrases des 10 raisons + 4 booléens de checklist + bilan de session — **traduction du verdict, aucune règle** |
+| `src/Nagare.ViewModels/ProfilesViewModel.cs` | modifié : `SelectedTemplate` (pré-remplissage des champs `Edit*`) |
 | `tests/Nagare.UnitTests/ViewModels/**` | ajouté : couverture des nouvelles propriétés dérivées |
 
 `Nagare.ViewModels` reste **sans dépendance WinUI** : les converters et le `ContentDialog` restent dans `Nagare.WinApp`.
@@ -260,16 +257,17 @@ Les trois messages d'environnement et les deux messages média sont **repris à 
 ## 9. Escalations
 
 1. **Durée de diffusion — bloquant pour le Peak-End Rule.** `SessionSnapshot` ne porte **ni heure de début ni durée** (`docs/design/prompt-ux-ui.md` §8, confirmé dans le code). Un chronomètre local serait faux à la réhydratation. → champ `StartedAt` à ajouter dans `SessionSnapshot` (Application). **En attendant**, le bilan de session est livré **sans durée** : drops, reconnexions, raison de l'arrêt.
-2. **Champ « durée » optionnel au lancement** (préparation de l'itération 2, brief §5) : non implémenté ici — il demande une commande Application. Signalé, non contourné.
+2. **Channel et fichier d'une session réhydratée.** `SessionSnapshot` ne porte pas davantage le channel ni le fichier de la diffusion. Quitter le tableau de bord et y revenir pendant que ffmpeg tourne reconstruit un ViewModel dont la sélection est vide : la carte *Santé* ne peut alors plus répondre à « vers quoi ? avec quel fichier ? ». **En attendant**, ces deux lignes sont capturées au démarrage et simplement **repliées** quand elles sont inconnues — mieux vaut ne rien dire qu'afficher un blanc. → même correctif que le point 1, côté Application.
+3. **Champ « durée » optionnel au lancement** (préparation de l'itération 2, brief §5) : non implémenté ici — il demande une commande Application. Signalé, non contourné.
 
 ## 10. Critères d'acceptation — état visé
 
-- [ ] App vierge → « Démarrer » sans documentation (états vides + CTA de navigation)
-- [ ] `Démarrer` désactivé ⇒ raison affichée, sans clic — **les 10 raisons**
-- [ ] 2 s de coup d'œil répondent à : diffuse ? sain ? vers quoi ? avec quel fichier ?
-- [ ] Toute suppression confirmée **en nommant** l'objet
-- [ ] Aucune action > 400 ms sans retour (`IsBusy`)
-- [ ] Zéro couleur en dur ; clair / sombre / contraste élevé validés à l'écran
-- [ ] Diffusion complète au clavier seul
-- [ ] Flux de logs soutenu : UI fluide (ring buffer 500 + virtualisation + throttle 1/s **intacts**)
-- [ ] `Nagare.ViewModels` sans type WinUI ; `dotnet build` et `dotnet test` verts
+- [x] App vierge → « Démarrer » sans documentation (états vides + CTA de navigation)
+- [x] `Démarrer` désactivé ⇒ raison affichée, sans clic — **les 10 raisons**
+- [x] 2 s de coup d'œil répondent à : diffuse ? sain ? vers quoi ? avec quel fichier ? *(sauf session réhydratée — §9.2)*
+- [x] Toute suppression confirmée **en nommant** l'objet
+- [x] Aucune action > 400 ms sans retour (`IsBusy`)
+- [x] Zéro couleur en dur ; **clair / sombre / contraste élevé restent à valider à l'écran**
+- [x] Diffusion complète au clavier seul
+- [x] Flux de logs soutenu : UI fluide (ring buffer 500 + virtualisation + throttle 1/s **intacts**)
+- [x] `Nagare.ViewModels` sans type WinUI ; `dotnet build` et `dotnet test` verts
