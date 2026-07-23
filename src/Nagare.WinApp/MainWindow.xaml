@@ -7,17 +7,47 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
 
+    <!-- Jakob : le matériau de fenêtre de Windows 11. Les pages ne peignent aucun fond, c'est le
+         Mica qui transparaît sous elles. Sur un Windows 10 il ne s'active simplement pas. -->
+    <Window.SystemBackdrop>
+        <MicaBackdrop />
+    </Window.SystemBackdrop>
+
     <NavigationView
         x:Name="Navigation"
         IsBackButtonVisible="Collapsed"
         IsSettingsVisible="False"
         PaneDisplayMode="Left"
+        OpenPaneLength="220"
         SelectionChanged="OnNavigationSelectionChanged">
 
+        <!-- 流 : le glyphe de marque, seul ornement de l'application. -->
+        <NavigationView.PaneHeader>
+            <TextBlock
+                Text="流 Nagare"
+                Margin="4,0,0,0"
+                VerticalAlignment="Center"
+                Style="{StaticResource BodyStrongTextBlockStyle}" />
+        </NavigationView.PaneHeader>
+
+        <!-- Trois entrées ; le rail est dimensionné pour en accueillir une quatrième
+             (« Planifications », itération 2) sans redécoupage. -->
         <NavigationView.MenuItems>
-            <NavigationViewItem Content="Tableau de bord" Tag="Dashboard" />
-            <NavigationViewItem Content="Profils" Tag="Profiles" />
-            <NavigationViewItem Content="Channels" Tag="Channels" />
+            <NavigationViewItem Content="Tableau de bord" Tag="Dashboard">
+                <NavigationViewItem.Icon>
+                    <SymbolIcon Symbol="Play" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="Profils" Tag="Profiles">
+                <NavigationViewItem.Icon>
+                    <SymbolIcon Symbol="Setting" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="Channels" Tag="Channels">
+                <NavigationViewItem.Icon>
+                    <SymbolIcon Symbol="World" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
         </NavigationView.MenuItems>
 
         <Frame x:Name="ContentFrame" />

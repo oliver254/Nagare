@@ -135,6 +135,44 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
     [NotifyCanExecuteChangedFor(nameof(StartCommand))]
     private StartPreflight _preflight = StartPreflight.NotChecked;
 
+    // ------------------------------------------------------------ launch checklist
+    //
+    // A disabled button that does not say what is missing is the worst hole of this page. The four
+    // flags below and <see cref="StartHint"/> close it: TOGETHER with EnvironmentIssue and
+    // MediaError they cover all ten StartBlockReason values, so a blocked start always shows a
+    // reason without a click. They translate the verdict; they do not re-decide it.
+
+    [ObservableProperty]
+    private bool _isEnvironmentReady;
+
+    [ObservableProperty]
+    private bool _isFileReady;
+
+    [ObservableProperty]
+    private bool _isProfileReady;
+
+    [ObservableProperty]
+    private bool _isChannelReady;
+
+    /// <summary>
+    /// The blocking reasons that are neither a toolchain fault nor a file fault — "you have not
+    /// picked a channel yet". Shown next to the button, quietly: it is a next step, not an error.
+    /// </summary>
+    [ObservableProperty]
+    private string? _startHint;
+
+    // ------------------------------------------------------------- first-run state
+
+    [ObservableProperty]
+    private bool _hasProfiles;
+
+    [ObservableProperty]
+    private bool _hasChannels;
+
+    /// <summary>No profile or no channel: nothing can be broadcast yet, and the page must say so.</summary>
+    [ObservableProperty]
+    private bool _needsSetup = true;
+
     // --------------------------------------------------------------- live session
 
     [ObservableProperty]
@@ -143,6 +181,28 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty]
     private string _statusLabel = "Aucune session";
+
+    /// <summary>
+    /// The word shown on the health badge. Same thing as <see cref="StatusLabel"/> everywhere except
+    /// on air, where the streamer's word wins: "En direct", not "En cours".
+    /// </summary>
+    [ObservableProperty]
+    private string _statusHeadline = "Aucune session";
+
+    /// <summary>How loud that badge reads. Paired with the word above — never colour alone.</summary>
+    [ObservableProperty]
+    private StatusSeverity _severity = StatusSeverity.Neutral;
+
+    /// <summary>
+    /// What the broadcast left behind, shown once it ends: drops, reconnections, and the reason when
+    /// it failed. Without it a session — a failed one above all — ends on an empty screen.
+    ///
+    /// <para>It carries NO duration: <see cref="SessionSnapshot"/> has neither a start time nor an
+    /// elapsed one, and ffmpeg's own <c>time=</c> resets at every reconnection. See
+    /// docs/design/ux-ui.md §9.</para>
+    /// </summary>
+    [ObservableProperty]
+    private string? _sessionSummary;
 
     [ObservableProperty]
     private SessionStatus? _status;
@@ -191,6 +251,11 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
             new GetChannelsQuery());
         Replace(Channels, channels);
 
+        // A blank install has neither, and the page is then a dead end unless it says where to go.
+        HasProfiles = Profiles.Count > 0;
+        HasChannels = Channels.Count > 0;
+        NeedsSetup = !HasProfiles || !HasChannels;
+
         Subscribe();
 
         Logs.Clear();
@@ -208,13 +273,26 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
         if (path is null)
             return;   // cancelled
 
+        await ApplyFileAsync(path);
+    });
+
+    /// <summary>
+    /// Same as picking, for a file DROPPED on the page. Liberal in what it accepts (Postel): the
+    /// extension is not filtered here — ffprobe answers whether the file can be broadcast, and the
+    /// preflight decides. A UI-side whitelist would be a second, poorer rule.
+    /// </summary>
+    [RelayCommand]
+    private Task UseFileAsync(string path) => RunGuardedAsync(() => ApplyFileAsync(path));
+
+    private async Task ApplyFileAsync(string path)
+    {
         InputFilePath = path;
         _media = null;                  // the previous file's report says nothing about this one
 
         await ValidateFileAsync();      // fills _media and the summary
         await RefreshPreflightAsync();  // the verdict on that report — and with it, MediaError
         await RefreshPreviewAsync();
-    });
+    }
 
     [RelayCommand(CanExecute = nameof(CanStart))]
     private Task StartAsync() => RunGuardedAsync(async () =>
@@ -257,6 +335,25 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
     {
         EnvironmentIssue = EnvironmentMessage(value.Reason);
         MediaError = MediaMessage(value.Reason);
+        StartHint = StartHintMessage(value.Reason);
+        RefreshChecklist(value.Reason);
+    }
+
+    /// <summary>
+    /// The four launch conditions, as facts rather than as a verdict: three of them are plain
+    /// selection state, the fourth reads the cached environment report. Nothing here decides whether
+    /// a start is allowed — <see cref="Preflight"/> alone does, and it is what drives the button.
+    /// </summary>
+    private void RefreshChecklist(StartBlockReason reason)
+    {
+        IsEnvironmentReady = _environment is { FfmpegAvailable: true, FfprobeAvailable: true }
+            && reason is not StartBlockReason.NvencUnavailable;
+
+        IsProfileReady = SelectedProfile is not null;
+        IsChannelReady = SelectedChannel is not null;
+
+        IsFileReady = !string.IsNullOrWhiteSpace(InputFilePath)
+            && reason is not (StartBlockReason.InputFileNotFound or StartBlockReason.InputFileUnreadable);
     }
 
     /// <summary>
@@ -387,6 +484,21 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
         _ => null
     };
 
+    /// <summary>
+    /// The remaining five reasons — the ones nothing else covers. They used to return null, which is
+    /// how the page ended up with a dead Start button and not a word to explain it. They are stated
+    /// flatly, next to the button: they name the next step, they do not scold.
+    /// </summary>
+    private static string? StartHintMessage(StartBlockReason reason) => reason switch
+    {
+        StartBlockReason.NotChecked => "Vérification en cours…",
+        StartBlockReason.SessionAlreadyActive => "Une diffusion est déjà en cours.",
+        StartBlockReason.ProfileNotSelected => "Choisissez un profil d'encodage.",
+        StartBlockReason.ChannelNotSelected => "Choisissez un channel de diffusion.",
+        StartBlockReason.InputFileNotSelected => "Choisissez la vidéo à diffuser.",
+        _ => null
+    };
+
     // ------------------------------------------------------- real time (phase 5)
 
     private void Subscribe()
@@ -431,6 +543,10 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
     /// <summary>UI thread only.</summary>
     private void ApplySnapshot(SessionSnapshot snapshot)
     {
+        // Read BEFORE the flag is overwritten: the transition active -> not active is what produces
+        // the end-of-session summary, and it is visible for one call only.
+        var wasActive = IsSessionActive;
+
         Status = snapshot.Status;
         StatusLabel = LabelOf(snapshot.Status);
 
@@ -446,7 +562,50 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
         BitrateKbps = snapshot.Stats?.BitrateKbps ?? 0;
         Speed = snapshot.Stats?.Speed ?? 0;
         DroppedFrames = snapshot.Stats?.DroppedFrames ?? 0;
+
+        StatusHeadline = HeadlineOf(snapshot.Status);
+        Severity = SeverityOf(snapshot.Status, IsHealthWarning);
+
+        if (IsSessionActive)
+            SessionSummary = null;            // a new broadcast buries the previous one's report
+        else if (wasActive)
+            SessionSummary = Summarize(snapshot);
     }
+
+    /// <summary>What the badge says. Only <c>Running</c> differs from <see cref="LabelOf"/>.</summary>
+    private static string HeadlineOf(SessionStatus status)
+        => status is SessionStatus.Running ? "En direct" : LabelOf(status);
+
+    /// <summary>
+    /// How loud it reads. A healthy broadcast is green, a degraded one amber — the health indicator
+    /// is what separates them, and it is the domain's (SPEC §6), computed from speed and drops.
+    /// </summary>
+    private static StatusSeverity SeverityOf(SessionStatus status, bool healthWarning) => status switch
+    {
+        SessionStatus.Starting => StatusSeverity.Information,
+        SessionStatus.Running => healthWarning ? StatusSeverity.Caution : StatusSeverity.Success,
+        SessionStatus.Reconnecting => StatusSeverity.Caution,
+        SessionStatus.Failed => StatusSeverity.Critical,
+        _ => StatusSeverity.Neutral
+    };
+
+    /// <summary>
+    /// The last thing seen of a broadcast. A failure names its cause — the domain's own text, never
+    /// re-authored here.
+    /// </summary>
+    private static string Summarize(SessionSnapshot snapshot)
+    {
+        var drops = snapshot.Stats?.DroppedFrames ?? 0;
+        var tail = $"{Plural(drops, "image perdue", "images perdues")}, "
+            + $"{Plural(snapshot.ReconnectAttempts, "reconnexion", "reconnexions")}.";
+
+        return snapshot.Status is SessionStatus.Failed
+            ? $"Diffusion interrompue — {snapshot.LastError ?? "cause inconnue"}. {tail}"
+            : $"Diffusion arrêtée — {tail}";
+    }
+
+    private static string Plural(int count, string singular, string plural)
+        => $"{count} {(count > 1 ? plural : singular)}";
 
     /// <summary>
     /// Called from the ffmpeg STDERR READER thread, for every single line (the runner forwards the

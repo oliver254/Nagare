@@ -330,6 +330,185 @@ public sealed class DashboardViewModelTests
         Assert.True(vm.StartCommand.CanExecute(null));
     }
 
+    // ------------------------------------------------- a blocked start always says why (UX §5)
+    //
+    // GetStartPreflightHandlerTests proves WHICH reason is reported. What follows proves the other
+    // half of the acceptance criterion: whatever that reason is, SOMETHING is on screen. The three
+    // surfaces are disjoint by design — environment, media, hint — so the assertion is on their
+    // union, which is exactly what the user sees.
+
+    [Theory]
+    [InlineData(StartBlockReason.NotChecked)]
+    [InlineData(StartBlockReason.FfmpegMissing)]
+    [InlineData(StartBlockReason.FfprobeMissing)]
+    [InlineData(StartBlockReason.NvencUnavailable)]
+    [InlineData(StartBlockReason.SessionAlreadyActive)]
+    [InlineData(StartBlockReason.ProfileNotSelected)]
+    [InlineData(StartBlockReason.ChannelNotSelected)]
+    [InlineData(StartBlockReason.InputFileNotSelected)]
+    [InlineData(StartBlockReason.InputFileNotFound)]
+    [InlineData(StartBlockReason.InputFileUnreadable)]
+    public async Task Every_blocking_reason_puts_a_sentence_on_screen(StartBlockReason reason)
+    {
+        var (vm, _, _, _, _) = await CreateLoadedAsync();
+
+        vm.Preflight = new StartPreflight(reason);
+
+        Assert.False(vm.StartCommand.CanExecute(null));
+        Assert.NotNull(vm.EnvironmentIssue ?? vm.MediaError ?? vm.StartHint);
+    }
+
+    [Fact]
+    public async Task Nothing_is_said_once_the_start_is_cleared()
+    {
+        var (vm, _, _, _, _) = await CreateLoadedAsync();
+
+        vm.SelectedProfile = vm.Profiles.Single();
+        vm.SelectedChannel = vm.Channels.Single();
+        await vm.PickFileCommand.ExecuteAsync(null);
+
+        Assert.True(vm.StartCommand.CanExecute(null));
+        Assert.Null(vm.EnvironmentIssue);
+        Assert.Null(vm.MediaError);
+        Assert.Null(vm.StartHint);
+    }
+
+    /// <summary>The checklist reports the four launch conditions, one by one, as they are met.</summary>
+    [Fact]
+    public async Task The_checklist_fills_in_as_the_user_progresses()
+    {
+        var (vm, _, _, _, _) = await CreateLoadedAsync();
+
+        Assert.True(vm.IsEnvironmentReady);    // a healthy toolchain was probed on load
+        Assert.False(vm.IsProfileReady);
+        Assert.False(vm.IsChannelReady);
+        Assert.False(vm.IsFileReady);
+
+        vm.SelectedProfile = vm.Profiles.Single();
+        Assert.True(vm.IsProfileReady);
+
+        vm.SelectedChannel = vm.Channels.Single();
+        Assert.True(vm.IsChannelReady);
+
+        await vm.PickFileCommand.ExecuteAsync(null);
+        Assert.True(vm.IsFileReady);
+    }
+
+    [Fact]
+    public async Task An_unreadable_file_does_not_tick_the_file_box()
+    {
+        var broken = new MediaValidationResult(
+            Exists: true, Readable: false, Duration: null, Width: null, Height: null, Fps: null,
+            VideoCodec: null, AudioCodec: null, Error: null);
+
+        var (vm, _, _, _, _) = await CreateLoadedAsync(media: broken);
+
+        await vm.PickFileCommand.ExecuteAsync(null);
+
+        Assert.False(vm.IsFileReady);
+    }
+
+    /// <summary>A machine without NVENC and an NVENC profile: the environment box goes off.</summary>
+    [Fact]
+    public async Task A_missing_encoder_unticks_the_environment_box()
+    {
+        var report = new FfmpegEnvironmentReport(
+            FfmpegAvailable: true, FfprobeAvailable: true, FfmpegVersion: "7.1",
+            NvencAvailable: false, Error: null);
+
+        var (vm, _, _, _, _) = await CreateLoadedAsync(environment: report);
+
+        Assert.True(vm.IsEnvironmentReady);
+
+        vm.SelectedProfile = vm.Profiles.Single();   // an h264_nvenc profile
+
+        Assert.False(vm.IsEnvironmentReady);
+    }
+
+    // ------------------------------------------------------------ a file dropped on the page
+
+    [Fact]
+    public async Task A_dropped_file_goes_through_the_same_validation_as_a_picked_one()
+    {
+        var (vm, _, _, _, _) = await CreateLoadedAsync();
+
+        vm.SelectedProfile = vm.Profiles.Single();
+        vm.SelectedChannel = vm.Channels.Single();
+
+        await vm.UseFileCommand.ExecuteAsync(@"C:\videos\dropped.mp4");
+
+        Assert.Equal(@"C:\videos\dropped.mp4", vm.InputFilePath);
+        Assert.True(vm.IsFileReady);
+        Assert.True(vm.StartCommand.CanExecute(null));
+    }
+
+    // ---------------------------------------------------------------- first run and end of run
+
+    [Fact]
+    public async Task A_blank_install_asks_for_a_profile_and_a_channel()
+    {
+        var (vm, _, _, _, _) = await CreateLoadedAsync(empty: true);
+
+        Assert.False(vm.HasProfiles);
+        Assert.False(vm.HasChannels);
+        Assert.True(vm.NeedsSetup);
+    }
+
+    [Fact]
+    public async Task A_configured_install_asks_for_nothing()
+    {
+        var (vm, _, _, _, _) = await CreateLoadedAsync();
+
+        Assert.True(vm.HasProfiles);
+        Assert.True(vm.HasChannels);
+        Assert.False(vm.NeedsSetup);
+    }
+
+    /// <summary>
+    /// A broadcast that ends leaves a report behind — otherwise the page simply empties out, and the
+    /// last thing the user is left with is nothing (Peak-End rule).
+    /// </summary>
+    [Fact]
+    public async Task A_finished_session_leaves_a_report()
+    {
+        var (vm, _, monitor, _, _) = await CreateLoadedAsync();
+
+        monitor.RaiseChanged(Snapshot(SessionStatus.Running, fps: 30));
+        Assert.Null(vm.SessionSummary);            // nothing to report while it is on air
+        Assert.Equal("En direct", vm.StatusHeadline);
+        Assert.Equal(StatusSeverity.Success, vm.Severity);
+
+        monitor.RaiseChanged(Snapshot(SessionStatus.Stopped, reconnectAttempts: 2));
+
+        Assert.NotNull(vm.SessionSummary);
+        Assert.Contains("arrêtée", vm.SessionSummary);
+        Assert.Contains("2 reconnexions", vm.SessionSummary);
+        Assert.Equal(StatusSeverity.Neutral, vm.Severity);
+    }
+
+    [Fact]
+    public async Task A_failed_session_reports_the_reason_the_domain_gave()
+    {
+        var (vm, _, monitor, _, _) = await CreateLoadedAsync();
+
+        monitor.RaiseChanged(Snapshot(SessionStatus.Running, fps: 30));
+        monitor.RaiseChanged(Snapshot(SessionStatus.Failed) with { LastError = "Connection refused." });
+
+        Assert.Equal(StatusSeverity.Critical, vm.Severity);
+        Assert.Contains("Connection refused.", vm.SessionSummary);
+    }
+
+    [Fact]
+    public async Task A_degraded_broadcast_reads_as_a_warning_not_as_a_success()
+    {
+        var (vm, _, monitor, _, _) = await CreateLoadedAsync();
+
+        monitor.RaiseChanged(Snapshot(SessionStatus.Running, speed: 0.8, health: HealthIndicator.Warning));
+
+        Assert.Equal(StatusSeverity.Caution, vm.Severity);
+        Assert.Equal("En direct", vm.StatusHeadline);   // the word does not change: the colour is not the message
+    }
+
     /// <summary>What is shown before launching is the MASKED command line (SPEC §4).</summary>
     [Fact]
     public async Task Command_preview_is_the_masked_line()
@@ -417,14 +596,16 @@ public sealed class DashboardViewModelTests
     private static async Task<Fixture> CreateLoadedAsync(
         FakeSessionMonitor? monitor = null,
         FfmpegEnvironmentReport? environment = null,
-        MediaValidationResult? media = null)
+        MediaValidationResult? media = null,
+        bool empty = false)
     {
         monitor ??= new FakeSessionMonitor();
         var time = new FakeTimeProvider();
         var dispatcher = new FakeUiDispatcher();
 
-        IReadOnlyList<StreamProfileDto> profiles = [TestProfile];
-        IReadOnlyList<ChannelDto> channels = [TestChannel];
+        // "empty" is the first run: no profile, no channel — the state the page has to guide out of.
+        IReadOnlyList<StreamProfileDto> profiles = empty ? [] : [TestProfile];
+        IReadOnlyList<ChannelDto> channels = empty ? [] : [TestChannel];
 
         // The preflight is answered by the REAL Application handler, not by a canned verdict. The
         // rule is tested on its own (GetStartPreflightHandlerTests); what these tests must prove is
