@@ -48,10 +48,15 @@ Un incrément n'est « terminé » que si **tout** est vrai :
 
 ## Découpage du travail
 
-Le plan (`docs/plan-winui3-migration.md`) est découpé en **phases**, chacune avec
-son **critère de sortie** explicite. Une phase = une branche = une PR.
-On ne démarre pas une phase avant que la précédente soit *Done*, sauf phases
-explicitement marquées parallélisables.
+Le travail se découpe en **phases**, chacune avec son **critère de sortie**
+explicite. Une phase = une branche = une PR. On ne démarre pas une phase avant que
+la précédente soit *Done*, sauf phases explicitement marquées parallélisables.
+
+Le plan de migration WinUI 3 (`docs/plan-winui3-migration.md`) a suivi ce découpage
+et ses **7 phases sont closes** ; il reste la référence de la méthode et l'historique
+des pièges rencontrés. Le chantier suivant est la **conception UX/UI**
+(`docs/design/prompt-ux-ui.md`), qui impose une validation du document de conception
+**avant** toute écriture de XAML.
 
 ## Décisions d'architecture
 

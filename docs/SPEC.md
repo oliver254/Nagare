@@ -83,8 +83,20 @@ monitoring temps réel.
   unitaires — c'est le dernier écart entre « les tests sont verts » et « ça marche ».
 - Décisions utilisateur du 2026-07-06 (priment sur le texte ci-dessus) :
   le code est **intégralement en anglais** (identifiants, fichiers, enums) ;
-  la couche présentation s'appelle **Nagare.WinApp** ; l'UI utilise **MudBlazor** ;
+  la couche présentation s'appelle **Nagare.WinApp** ;
   la « cible de diffusion » (`StreamTarget`) s'appelle désormais **`Channel`**
   (chaîne) et Twitch/YouTube/RTMP custom sont les valeurs de l'enum **`Platform`**.
+- **La présentation n'est PAS Blazor Server** (§ « Contexte technique cible » et
+  § « Architecture » ci-dessus sont périmés sur ce point). Motif : exécuter l'app
+  ouvrait un **navigateur**, alors que le besoin est une application Windows.
+  Retenu : **WinUI 3 natif**, XAML Fluent, exécutable non empaqueté — **MudBlazor
+  est abandonné** avec les composants Razor. Voir ADR-0006 et
+  `docs/plan-winui3-migration.md`. Le livrable §3 (« dashboard Blazor minimal »)
+  est satisfait par les trois pages WinUI 3 : sélection vidéo, profil, channel,
+  start/stop, logs live.
+- **CQRS** : les handlers maison ont laissé place à **BrilliantMediator**, un
+  mediator *source-generated* — donc sans réflexion ni scan d'assembly, ce que la
+  spec autorisait explicitement. Voir ADR-0007.
 - Feature en cadrage (eva) : planification de stream (date de début, durée en
-  heures, channel) — voir docs/product/stream-scheduling.md quand disponible.
+  heures, channel) — voir `docs/product/stream-scheduling.md`, positionnée en
+  itération 2.

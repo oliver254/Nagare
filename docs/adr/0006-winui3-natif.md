@@ -57,3 +57,8 @@ WinForms / WPF) : le csproj sera écrit à la main. Un **spike de faisabilité e
 la phase 0** du plan. En cas d'échec persistant, repli sur **WPF** (template
 présent, thème Fluent type WPF-UI) : l'architecture MVVM et les ViewModels sont
 identiques, seul le dialecte XAML change.
+
+> **Suite (2026-07-14).** Le repli WPF est **sans objet** : la phase 0 a réussi
+> (csproj manuel, build vert, fenêtre native), et les phases 1 à 6 du plan ont
+> été livrées et vérifiées. Aucun workload Visual Studio supplémentaire n'a été
+> nécessaire.

@@ -237,8 +237,10 @@ pas de réflexion — `IDomainEventHandler<T>` seulement si un 2ᵉ consommateur
 
 ```mermaid
 graph TD
-    WinApp["Nagare.WinApp<br/>Blazor Server · MudBlazor · composition root"] --> App["Nagare.Application<br/>CQRS, ports, coordinateur"]
+    WinApp["Nagare.WinApp<br/>WinUI 3 · vues XAML · composition root"] --> Vm["Nagare.ViewModels<br/>ViewModels · net10.0 · sans WinUI"]
+    WinApp --> App["Nagare.Application<br/>CQRS, ports, coordinateur"]
     WinApp --> Infra["Nagare.Infrastructure<br/>ffmpeg, Data Protection, JSON"]
+    Vm --> App
     Infra --> App
     App --> Dom["Nagare.Domain<br/>agrégats, VOs, événements"]
     Infra --> Dom

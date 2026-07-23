@@ -8,10 +8,11 @@ Windows desktop app. This design system captures how Nagare should look, read
 and behave: it is **Fluent Design (Windows 11) tuned for one streamer's
 workflow**, with every decision anchored to a Law of UX.
 
-> **Status.** Nagare's Domain / Application / Infrastructure are complete and
-> tested; the **presentation layer is mid-rebuild** (Blazor Server → WinUI 3
-> native). This system is the visual + UX foundation for that rebuild. It is a
-> *reference recreation for design work*, not the shipping XAML.
+> **Status.** All four layers are shipped: the WinUI 3 rebuild is **complete** and
+> the app runs as a real Windows window. What is missing is UX and visual care, not
+> functionality — the three pages are a flat wall of stacked controls. This system
+> is the visual + UX foundation for that polish pass. It is a *reference recreation
+> for design work*, not the shipping XAML.
 
 ---
 
