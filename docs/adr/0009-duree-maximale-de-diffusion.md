@@ -53,14 +53,21 @@ Invariants (`DomainException` sinon, comme `EncodingSettings` E1–E8 et
 | # | Invariant | Raison |
 |---|---|---|
 | S1 | `maxDuration` présente ⇒ `> TimeSpan.Zero` | une fenêtre nulle ou négative n'a pas de sens (US-0 : saisie refusée) |
-| S2 | `maxDuration` présente ⇒ `<= MaxAllowedDuration` (24 h) | garde-fou anti-faute de frappe, pas une limite produit |
+| S2 | `maxDuration` présente ⇒ `<= MaxAllowedDuration` (24 h) | garde-fou anti-faute de frappe, pas une limite produit — **confirmé par le propriétaire (aucun usage réel > 24 h) ; se lève en une constante si besoin** |
 
 `MaxAllowedDuration` est **exposée par le domaine** : l'UI borne son champ de
 saisie avec cette constante, exactement comme les ComboBox lisent
 `EncodingSettings.PresetsFor` — la borne affichée et la borne appliquée ne
 peuvent pas diverger. **Aucune validation métier n'est réécrite côté UI**
-(ARCHITECTURE §7) : ce qui passe malgré tout lève une `DomainException` que le
-ViewModel affiche.
+(ARCHITECTURE §7) : ce qui passe malgré tout lève une `DomainException`.
+
+Cette `DomainException` est **affichée par le ViewModel, traduite en français**
+pour le seul invariant de durée — le seul qu'un écran par ailleurs valide puisse
+encore déclencher (la saisie borne le reste). C'est une **traduction, pas une
+seconde règle** : le seuil lu côté UI est celui du domaine
+(`StreamSession.MaxAllowedDuration`), donc les deux ne peuvent pas diverger, et
+toute autre `DomainException` conserve son texte. Même principe que la traduction
+des `StartBlockReason` du préflight en phrases françaises.
 
 L'agrégat ne **calcule ni n'évalue** l'échéance. L'instant de fin
 (`PlannedEndsAt = démarrage + MaxDuration`) est calculé et détenu par le
