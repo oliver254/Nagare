@@ -178,6 +178,22 @@ public sealed partial class KeyStateConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
+/// <summary>
+/// A channel without a key cannot broadcast: that is a real anomaly, and it is the only thing on the
+/// list allowed to take colour. A configured key stays neutral — announcing "all is well" in green
+/// would spend the same attention the missing one needs.
+/// </summary>
+public sealed partial class KeyStateToBrushConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language)
+        => HealthToBrushConverter.ThemeBrush(
+            value is true ? "TextFillColorSecondaryBrush" : "SystemFillColorCautionBrush",
+            value is true ? Colors.Gray : Colors.Orange);
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language)
+        => throw new NotSupportedException();
+}
+
 /// <summary>Anything -> its text. x:Bind requires a string when the target is a string.</summary>
 public sealed partial class AsTextConverter : IValueConverter
 {

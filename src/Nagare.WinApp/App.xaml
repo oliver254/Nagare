@@ -27,6 +27,7 @@
             <converters:StatusToBusyRingConverter x:Key="StatusToBusyRing" />
             <converters:StatConverter x:Key="Stat" />
             <converters:KeyStateConverter x:Key="KeyState" />
+            <converters:KeyStateToBrushConverter x:Key="KeyStateToBrush" />
             <converters:AsTextConverter x:Key="AsText" />
             <converters:EncodingSummaryConverter x:Key="EncodingSummary" />
         </ResourceDictionary>

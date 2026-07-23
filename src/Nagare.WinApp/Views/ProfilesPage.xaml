@@ -8,7 +8,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
 
-    <Grid Margin="24" RowSpacing="12">
+    <Grid Margin="24" RowSpacing="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -16,7 +16,15 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="Profils d'encodage" Style="{StaticResource TitleTextBlockStyle}" />
+        <!-- ================================================================= en-tête -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12">
+            <TextBlock Text="Profils d'encodage" Style="{StaticResource TitleTextBlockStyle}" />
+            <ProgressRing
+                Width="20" Height="20"
+                VerticalAlignment="Center"
+                IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}"
+                AutomationProperties.Name="Chargement en cours" />
+        </StackPanel>
 
         <!-- Les invariants E1-E8 sont levés par le DOMAINE (DomainException) et affichés ici tels
              quels : aucune validation n'est réécrite dans l'UI. -->
@@ -28,128 +36,226 @@
             Title="Réglage refusé"
             Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" />
 
-        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
-            <Button Content="Nouveau" Style="{StaticResource AccentButtonStyle}" Command="{x:Bind ViewModel.NewCommand}" />
-            <Button Content="Modifier" Command="{x:Bind ViewModel.EditCommand}" />
-            <Button Content="Supprimer" Command="{x:Bind ViewModel.DeleteCommand}" />
-        </StackPanel>
+        <!-- Von Restorff : « Nouveau » est le seul élément accentué. Fitts : « Supprimer » est
+             tenu à l'écart de lui, à l'autre bout de la barre. -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <Button
+                Grid.Column="0"
+                Content="Nouveau"
+                MinHeight="32"
+                Style="{StaticResource AccentButtonStyle}"
+                Command="{x:Bind ViewModel.NewCommand}">
+                <Button.KeyboardAccelerators>
+                    <KeyboardAccelerator Modifiers="Control" Key="N" />
+                </Button.KeyboardAccelerators>
+            </Button>
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                <Button Content="Modifier" MinHeight="32" Command="{x:Bind ViewModel.EditCommand}" />
+
+                <!-- Passe par le code-behind : une suppression demande confirmation, en NOMMANT
+                     l'objet. L'activation reste pilotée par la sélection. -->
+                <Button
+                    Content="Supprimer"
+                    MinHeight="32"
+                    Click="OnDeleteRequested"
+                    IsEnabled="{x:Bind ViewModel.SelectedProfile, Converter={StaticResource NotNullToBool}, Mode=OneWay}">
+                    <Button.KeyboardAccelerators>
+                        <KeyboardAccelerator Key="Delete" />
+                    </Button.KeyboardAccelerators>
+                </Button>
+            </StackPanel>
+        </Grid>
 
         <Grid Grid.Row="3" ColumnSpacing="16">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="420" />
+                <ColumnDefinition Width="440" />
             </Grid.ColumnDefinitions>
 
-            <ListView
-                Grid.Column="0"
-                ItemsSource="{x:Bind ViewModel.Profiles}"
-                SelectedItem="{x:Bind ViewModel.SelectedProfile, Mode=TwoWay}"
-                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                BorderThickness="1">
+            <!-- ============================================================== liste -->
+            <Border Grid.Column="0" Style="{StaticResource NagareCardStyle}" Padding="8">
+                <Grid>
+                    <ListView
+                        ItemsSource="{x:Bind ViewModel.Profiles}"
+                        SelectedItem="{x:Bind ViewModel.SelectedProfile, Mode=TwoWay}"
+                        AutomationProperties.Name="Profils d'encodage">
 
-                <ListView.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <ItemsStackPanel Orientation="Vertical" />
-                    </ItemsPanelTemplate>
-                </ListView.ItemsPanel>
+                        <ListView.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <ItemsStackPanel Orientation="Vertical" />
+                            </ItemsPanelTemplate>
+                        </ListView.ItemsPanel>
 
-                <ListView.ItemTemplate>
-                    <DataTemplate x:DataType="profiles:StreamProfileDto">
-                        <StackPanel Spacing="2" Padding="0,8">
-                            <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                            <TextBlock
-                                Style="{StaticResource CaptionTextBlockStyle}"
-                                Text="{x:Bind Video, Converter={StaticResource EncodingSummary}}" />
-                        </StackPanel>
-                    </DataTemplate>
-                </ListView.ItemTemplate>
-            </ListView>
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="profiles:StreamProfileDto">
+                                <StackPanel Spacing="2" Padding="0,8">
+                                    <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Text="{x:Bind Video, Converter={StaticResource EncodingSummary}}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
 
-            <ScrollViewer
+                    <!-- L'état vide EST la documentation : il nomme le manque et propose l'action. -->
+                    <StackPanel
+                        Spacing="12"
+                        Padding="24"
+                        MaxWidth="360"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"
+                        Visibility="{x:Bind ViewModel.IsEmpty, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
+
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            Style="{StaticResource SubtitleTextBlockStyle}"
+                            Text="Aucun profil d'encodage" />
+
+                        <TextBlock
+                            TextWrapping="Wrap"
+                            TextAlignment="Center"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="Un profil décrit comment votre vidéo sera encodée. Partez d'un modèle prêt à l'emploi : rien d'autre n'est à régler pour diffuser." />
+
+                        <Button
+                            Content="Créer un profil"
+                            HorizontalAlignment="Center"
+                            MinHeight="32"
+                            Command="{x:Bind ViewModel.NewCommand}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ============================================================ éditeur -->
+            <Border
                 Grid.Column="1"
+                Style="{StaticResource NagareCardStyle}"
                 Visibility="{x:Bind ViewModel.IsEditing, Converter={StaticResource BoolToVisibility}, Mode=OneWay}">
 
-                <StackPanel Spacing="10" Padding="0,0,12,0">
-                    <TextBlock Text="Édition" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <ScrollViewer>
+                    <StackPanel Spacing="12" Padding="0,0,12,0">
+                        <TextBlock Text="Édition" Style="{StaticResource SubtitleTextBlockStyle}" />
 
-                    <TextBox Header="Nom" Text="{x:Bind ViewModel.EditName, Mode=TwoWay}" />
+                        <!-- Hick : quinze décisions ramenées à une. Le reste est en dessous, pour
+                             qui veut y toucher. -->
+                        <ComboBox
+                            Header="Partir d'un modèle"
+                            HorizontalAlignment="Stretch"
+                            DisplayMemberPath="Name"
+                            PlaceholderText="Choisir un modèle…"
+                            ItemsSource="{x:Bind ViewModel.Templates}"
+                            SelectedItem="{x:Bind ViewModel.SelectedTemplate, Mode=TwoWay}" />
 
-                    <TextBlock Text="Vidéo" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBox Header="Nom" Text="{x:Bind ViewModel.EditName, Mode=TwoWay}" />
 
-                    <ComboBox
-                        Header="Codec"
-                        HorizontalAlignment="Stretch"
-                        ItemsSource="{x:Bind ViewModel.VideoCodecs}"
-                        SelectedItem="{x:Bind ViewModel.EditCodec, Mode=TwoWay}" />
+                        <!-- Miller : quatre blocs de cinq champs au plus, au lieu d'une colonne
+                             plate de quinze. -->
+                        <TextBlock Text="Vidéo" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,4,0,0" />
 
-                    <!-- La liste des presets vient du DOMAINE (EncodingSettings.PresetsFor) : c'est
-                         exactement celle que valide l'invariant E6. -->
-                    <ComboBox
-                        Header="Preset"
-                        HorizontalAlignment="Stretch"
-                        ItemsSource="{x:Bind ViewModel.AvailablePresets}"
-                        SelectedItem="{x:Bind ViewModel.EditPreset, Mode=TwoWay}" />
+                        <ComboBox
+                            Header="Codec"
+                            HorizontalAlignment="Stretch"
+                            ItemsSource="{x:Bind ViewModel.VideoCodecs}"
+                            SelectedItem="{x:Bind ViewModel.EditCodec, Mode=TwoWay}" />
 
-                    <ComboBox
-                        Header="Rate control"
-                        HorizontalAlignment="Stretch"
-                        ItemsSource="{x:Bind ViewModel.RateControls}"
-                        SelectedItem="{x:Bind ViewModel.EditRateControl, Mode=TwoWay}" />
+                        <!-- La liste des presets vient du DOMAINE (EncodingSettings.PresetsFor) : c'est
+                             exactement celle que valide l'invariant E6. -->
+                        <ComboBox
+                            Header="Preset"
+                            HorizontalAlignment="Stretch"
+                            ItemsSource="{x:Bind ViewModel.AvailablePresets}"
+                            SelectedItem="{x:Bind ViewModel.EditPreset, Mode=TwoWay}" />
 
-                    <NumberBox Header="Bitrate (kbps)" SpinButtonPlacementMode="Compact"
-                               Value="{x:Bind ViewModel.EditBitrateKbps, Mode=TwoWay}" />
-                    <NumberBox Header="Maxrate (kbps)" SpinButtonPlacementMode="Compact"
-                               Value="{x:Bind ViewModel.EditMaxrateKbps, Mode=TwoWay}" />
-                    <NumberBox Header="Bufsize (kbps)" SpinButtonPlacementMode="Compact"
-                               Value="{x:Bind ViewModel.EditBufsizeKbps, Mode=TwoWay}" />
-                    <NumberBox Header="GOP (-g)" SpinButtonPlacementMode="Compact"
-                               Value="{x:Bind ViewModel.EditGopSize, Mode=TwoWay}" />
-                    <NumberBox Header="keyint_min" SpinButtonPlacementMode="Compact"
-                               Value="{x:Bind ViewModel.EditKeyintMin, Mode=TwoWay}" />
+                        <TextBlock Text="Débit" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,4,0,0" />
 
-                    <!-- ToggleSwitch et non CheckBox : IsOn est un bool, IsChecked un bool? — un
-                         x:Bind TwoWay vers une propriété bool s'y casserait. -->
-                    <ToggleSwitch Header="Forcer une résolution" IsOn="{x:Bind ViewModel.EditHasResolution, Mode=TwoWay}" />
-                    <NumberBox Header="Largeur" SpinButtonPlacementMode="Compact"
-                               IsEnabled="{x:Bind ViewModel.EditHasResolution, Mode=OneWay}"
-                               Value="{x:Bind ViewModel.EditWidth, Mode=TwoWay}" />
-                    <NumberBox Header="Hauteur" SpinButtonPlacementMode="Compact"
-                               IsEnabled="{x:Bind ViewModel.EditHasResolution, Mode=OneWay}"
-                               Value="{x:Bind ViewModel.EditHeight, Mode=TwoWay}" />
+                        <ComboBox
+                            Header="Rate control"
+                            HorizontalAlignment="Stretch"
+                            ToolTipService.ToolTip="CBR : débit constant, ce qu'attendent Twitch et YouTube. VBR : le débit varie selon la scène."
+                            ItemsSource="{x:Bind ViewModel.RateControls}"
+                            SelectedItem="{x:Bind ViewModel.EditRateControl, Mode=TwoWay}" />
 
-                    <ToggleSwitch Header="Forcer les fps" IsOn="{x:Bind ViewModel.EditHasFps, Mode=TwoWay}" />
-                    <NumberBox Header="fps" SpinButtonPlacementMode="Compact"
-                               IsEnabled="{x:Bind ViewModel.EditHasFps, Mode=OneWay}"
-                               Value="{x:Bind ViewModel.EditFps, Mode=TwoWay}" />
+                        <NumberBox Header="Bitrate (kbps)" SpinButtonPlacementMode="Compact"
+                                   Value="{x:Bind ViewModel.EditBitrateKbps, Mode=TwoWay}" />
+                        <NumberBox Header="Maxrate (kbps)" SpinButtonPlacementMode="Compact"
+                                   ToolTipService.ToolTip="Plafond du débit. En CBR il doit égaler le bitrate."
+                                   Value="{x:Bind ViewModel.EditMaxrateKbps, Mode=TwoWay}" />
+                        <NumberBox Header="Bufsize (kbps)" SpinButtonPlacementMode="Compact"
+                                   ToolTipService.ToolTip="Taille du tampon VBV. Jamais inférieure au bitrate, sinon la diffusion saccade."
+                                   Value="{x:Bind ViewModel.EditBufsizeKbps, Mode=TwoWay}" />
 
-                    <TextBlock Text="Audio" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock Text="Audio" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,4,0,0" />
 
-                    <ComboBox
-                        Header="Codec audio"
-                        HorizontalAlignment="Stretch"
-                        ItemsSource="{x:Bind ViewModel.AudioCodecs}"
-                        SelectedItem="{x:Bind ViewModel.EditAudioCodec, Mode=TwoWay}" />
+                        <ComboBox
+                            Header="Codec audio"
+                            HorizontalAlignment="Stretch"
+                            ItemsSource="{x:Bind ViewModel.AudioCodecs}"
+                            SelectedItem="{x:Bind ViewModel.EditAudioCodec, Mode=TwoWay}" />
 
-                    <NumberBox Header="Bitrate audio (kbps)" SpinButtonPlacementMode="Compact"
-                               Value="{x:Bind ViewModel.EditAudioBitrateKbps, Mode=TwoWay}" />
+                        <NumberBox Header="Bitrate audio (kbps)" SpinButtonPlacementMode="Compact"
+                                   Value="{x:Bind ViewModel.EditAudioBitrateKbps, Mode=TwoWay}" />
 
-                    <ComboBox
-                        Header="Sample rate (Hz)"
-                        HorizontalAlignment="Stretch"
-                        ItemsSource="{x:Bind ViewModel.SampleRates}"
-                        SelectedItem="{x:Bind ViewModel.EditSampleRateHz, Mode=TwoWay}" />
+                        <ComboBox
+                            Header="Sample rate (Hz)"
+                            HorizontalAlignment="Stretch"
+                            ItemsSource="{x:Bind ViewModel.SampleRates}"
+                            SelectedItem="{x:Bind ViewModel.EditSampleRateHz, Mode=TwoWay}" />
 
-                    <TextBlock Text="Entrée" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <!-- Personne ne devrait avoir à choisir un keyint_min pour diffuser : ce qui
+                             a une bonne valeur par défaut se replie ici. -->
+                        <Expander
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Stretch"
+                            Header="Avancé">
 
-                    <ToggleSwitch Header="Lire à la vitesse native (-re)" IsOn="{x:Bind ViewModel.EditReadAtNativeRate, Mode=TwoWay}" />
-                    <ToggleSwitch Header="Boucle infinie (-stream_loop -1)" IsOn="{x:Bind ViewModel.EditLoopInfinitely, Mode=TwoWay}" />
+                            <StackPanel Spacing="12">
+                                <NumberBox Header="GOP (-g)" SpinButtonPlacementMode="Compact"
+                                           ToolTipService.ToolTip="Intervalle entre deux images clés, en images. Deux secondes de vidéo est la valeur attendue par les plateformes."
+                                           Value="{x:Bind ViewModel.EditGopSize, Mode=TwoWay}" />
+                                <NumberBox Header="keyint_min" SpinButtonPlacementMode="Compact"
+                                           ToolTipService.ToolTip="Intervalle minimal entre deux images clés. Jamais supérieur au GOP."
+                                           Value="{x:Bind ViewModel.EditKeyintMin, Mode=TwoWay}" />
 
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button Content="Enregistrer" Style="{StaticResource AccentButtonStyle}" Command="{x:Bind ViewModel.SaveCommand}" />
-                        <Button Content="Annuler" Command="{x:Bind ViewModel.CancelCommand}" />
+                                <!-- ToggleSwitch et non CheckBox : IsOn est un bool, IsChecked un bool? — un
+                                     x:Bind TwoWay vers une propriété bool s'y casserait. -->
+                                <ToggleSwitch Header="Forcer une résolution" IsOn="{x:Bind ViewModel.EditHasResolution, Mode=TwoWay}" />
+                                <NumberBox Header="Largeur" SpinButtonPlacementMode="Compact"
+                                           IsEnabled="{x:Bind ViewModel.EditHasResolution, Mode=OneWay}"
+                                           Value="{x:Bind ViewModel.EditWidth, Mode=TwoWay}" />
+                                <NumberBox Header="Hauteur" SpinButtonPlacementMode="Compact"
+                                           IsEnabled="{x:Bind ViewModel.EditHasResolution, Mode=OneWay}"
+                                           Value="{x:Bind ViewModel.EditHeight, Mode=TwoWay}" />
+
+                                <ToggleSwitch Header="Forcer les fps" IsOn="{x:Bind ViewModel.EditHasFps, Mode=TwoWay}" />
+                                <NumberBox Header="fps" SpinButtonPlacementMode="Compact"
+                                           IsEnabled="{x:Bind ViewModel.EditHasFps, Mode=OneWay}"
+                                           Value="{x:Bind ViewModel.EditFps, Mode=TwoWay}" />
+
+                                <ToggleSwitch Header="Lire à la vitesse native (-re)"
+                                              ToolTipService.ToolTip="Envoie la vidéo à sa vitesse réelle, comme une diffusion en direct. À laisser actif."
+                                              IsOn="{x:Bind ViewModel.EditReadAtNativeRate, Mode=TwoWay}" />
+                                <ToggleSwitch Header="Boucle infinie (-stream_loop -1)"
+                                              ToolTipService.ToolTip="Rejoue le fichier sans fin. C'est ce que fait Nagare par défaut."
+                                              IsOn="{x:Bind ViewModel.EditLoopInfinitely, Mode=TwoWay}" />
+                            </StackPanel>
+                        </Expander>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                            <Button Content="Enregistrer" MinHeight="32" Style="{StaticResource AccentButtonStyle}" Command="{x:Bind ViewModel.SaveCommand}" />
+                            <Button Content="Annuler" MinHeight="32" Command="{x:Bind ViewModel.CancelCommand}" />
+                        </StackPanel>
                     </StackPanel>
-                </StackPanel>
-            </ScrollViewer>
+                </ScrollViewer>
+            </Border>
         </Grid>
     </Grid>
 </Page>

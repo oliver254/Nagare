@@ -34,9 +34,27 @@ public sealed partial class ProfilesViewModel : ViewModelBase
     /// <summary>Presets valid for the selected codec — the very list invariant E6 checks.</summary>
     public ObservableCollection<string> AvailablePresets { get; } = [];
 
+    /// <summary>Ready-made starting points for the editor — see <see cref="ProfileTemplate"/>.</summary>
+    public IReadOnlyList<ProfileTemplate> Templates { get; } = ProfileTemplate.All;
+
+    /// <summary>
+    /// Picking one fills the editor and nothing else: no profile is created, nothing is saved, every
+    /// field stays editable. Reset to null whenever the editor opens, so it reads as "start from…"
+    /// rather than as a claim about what is currently in the form.
+    /// </summary>
+    [ObservableProperty]
+    private ProfileTemplate? _selectedTemplate;
+
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(EditCommand), nameof(DeleteCommand))]
     private StreamProfileDto? _selectedProfile;
+
+    /// <summary>
+    /// Nothing to list. Drives the empty state, which is the only documentation this application has:
+    /// nobody reads a manual, so the blank list must name the next action itself.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isEmpty = true;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
@@ -118,6 +136,8 @@ public sealed partial class ProfilesViewModel : ViewModelBase
         Profiles.Clear();
         foreach (var profile in profiles)
             Profiles.Add(profile);
+
+        IsEmpty = Profiles.Count == 0;
     });
 
     [RelayCommand]
@@ -126,6 +146,7 @@ public sealed partial class ProfilesViewModel : ViewModelBase
         ErrorMessage = null;
         _editingId = null;
         IsEditing = true;
+        SelectedTemplate = null;
 
         EditName = string.Empty;
         EditCodec = VideoCodec.H264Nvenc;
@@ -158,6 +179,7 @@ public sealed partial class ProfilesViewModel : ViewModelBase
         ErrorMessage = null;
         _editingId = profile.Id;
         IsEditing = true;
+        SelectedTemplate = null;
 
         EditName = profile.Name;
 
@@ -234,6 +256,47 @@ public sealed partial class ProfilesViewModel : ViewModelBase
     private bool HasSelection() => SelectedProfile is not null;
 
     partial void OnEditCodecChanged(VideoCodec value) => RefreshPresets();
+
+    /// <summary>
+    /// Pours a template into the editor. Same order as <see cref="Edit"/>: the codec first, then the
+    /// preset list it commands, then the preset — set the other way round and the value is dropped
+    /// for not being in the list yet.
+    ///
+    /// <para>The name is filled only while it is still blank: a template applied to a profile the
+    /// user has already named must not rename it behind their back.</para>
+    /// </summary>
+    partial void OnSelectedTemplateChanged(ProfileTemplate? value)
+    {
+        if (value is null)
+            return;
+
+        if (string.IsNullOrWhiteSpace(EditName))
+            EditName = value.Name;
+
+        EditCodec = value.Video.Codec;
+        RefreshPresets();
+        EditPreset = value.Video.Preset;
+        EditRateControl = value.Video.RateControl;
+        EditBitrateKbps = value.Video.BitrateKbps;
+        EditMaxrateKbps = value.Video.MaxrateKbps;
+        EditBufsizeKbps = value.Video.BufsizeKbps;
+        EditGopSize = value.Video.GopSize;
+        EditKeyintMin = value.Video.KeyintMin;
+
+        EditHasResolution = value.Video.Resolution is not null;
+        EditWidth = value.Video.Resolution?.Width ?? EditWidth;
+        EditHeight = value.Video.Resolution?.Height ?? EditHeight;
+
+        EditHasFps = value.Video.Fps is not null;
+        EditFps = value.Video.Fps ?? EditFps;
+
+        EditAudioCodec = value.Audio.Codec;
+        EditAudioBitrateKbps = value.Audio.BitrateKbps;
+        EditSampleRateHz = value.Audio.SampleRateHz;
+
+        EditReadAtNativeRate = value.Input.ReadAtNativeRate;
+        EditLoopInfinitely = value.Input.LoopInfinitely;
+    }
 
     /// <summary>
     /// nvenc and libx264 do not share a single preset name. Switching codec therefore reloads the

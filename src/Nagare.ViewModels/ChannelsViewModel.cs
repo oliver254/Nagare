@@ -31,6 +31,13 @@ public sealed partial class ChannelsViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(EditCommand), nameof(DeleteCommand))]
     private ChannelDto? _selectedChannel;
 
+    /// <summary>
+    /// Nothing to list. Drives the empty state — the first launch has no channel, and a blank list
+    /// that says nothing is where a new user stops.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isEmpty = true;
+
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     private bool _isEditing;
@@ -65,6 +72,8 @@ public sealed partial class ChannelsViewModel : ViewModelBase
         Channels.Clear();
         foreach (var channel in channels)
             Channels.Add(channel);
+
+        IsEmpty = Channels.Count == 0;
     });
 
     [RelayCommand]
