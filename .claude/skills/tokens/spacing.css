@@ -1,0 +1,53 @@
+/* ============================================================================
+   Nagare — Spacing, sizing & radius tokens
+   ----------------------------------------------------------------------------
+   Fluent is built on a 4px grid. These are the exact values the Nagare XAML
+   uses (page Margin=24, RowSpacing=12, ColumnSpacing=16, Spacing=8/4/10/20)
+   plus the Fluent control-metric constants.
+
+   Spacing here also encodes the UX brief's grouping laws: cards are ceinturées
+   (bounded) with `--space-card-pad` inside and `--space-lg` between; the page
+   frame is `--space-page`.
+   ============================================================================ */
+
+:root {
+  /* ---- Spacing scale (4px grid) ---- */
+  --space-0: 0;
+  --space-xxs: 2px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 20px;
+  --space-2xl: 24px;
+  --space-3xl: 32px;
+  --space-4xl: 40px;
+  --space-5xl: 48px;
+  --space-6xl: 64px;
+
+  /* ---- Semantic spacing (named for the layout laws in the brief) ---- */
+  --space-page: 24px;         /* page frame margin (Grid Margin=24) */
+  --space-card-pad: 16px;     /* padding inside a bounded card */
+  --space-card-gap: 16px;     /* gap between sibling cards (Common Region) */
+  --space-stack: 12px;        /* vertical rhythm between grouped fields */
+  --space-inline: 8px;        /* gap between inline controls (button rows) */
+
+  /* ---- Radii ---- */
+  --radius-small: 2px;
+  --radius-control: 4px;      /* ControlCornerRadius — buttons, inputs, chips */
+  --radius-overlay: 8px;      /* OverlayCornerRadius — cards, dialogs, flyouts */
+  --radius-circle: 9999px;
+
+  /* ---- Control metrics (Fluent) ---- */
+  --control-height: 32px;             /* standard control (button, combo, input) */
+  --control-height-sm: 24px;
+  --control-height-lg: 40px;
+  --nav-item-height: 40px;            /* NavigationView item */
+  --nav-pane-width: 280px;            /* expanded nav pane */
+  --nav-pane-width-compact: 48px;     /* collapsed rail */
+  --min-target: 32px;                 /* Fitts's Law — minimum clickable size */
+  --focus-ring-width: 2px;
+  --focus-ring-gap: 1px;
+  --border-width: 1px;
+  --content-max-width: 1080px;        /* page content readable cap */
+}

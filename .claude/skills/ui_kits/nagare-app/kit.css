@@ -1,0 +1,102 @@
+/* Nagare UI kit — window chrome + page layout. Composes the design-system
+   components; only kit-specific structure lives here. All values are tokens. */
+
+/* ---- Windows 11 window chrome ---- */
+.win { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--material-mica); color: var(--text-primary); font-family: var(--font-sans); overflow: hidden; }
+.win-titlebar { height: 40px; flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding-left: 14px; }
+.win-title { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-secondary); }
+.win-mark { font-family: var(--font-display); font-size: 15px; color: var(--accent-text-primary); }
+.win-caption { display: flex; height: 100%; }
+.win-cap-btn { width: 46px; height: 40px; display: flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--text-secondary); cursor: default; }
+.win-cap-btn:hover { background: var(--subtle-secondary); }
+.win-cap-btn .m-min { width: 10px; height: 1px; background: currentColor; }
+.win-cap-btn .m-max { width: 9px; height: 9px; border: 1px solid currentColor; border-radius: 1px; }
+.win-close:hover { background: var(--critical); color: #fff; }
+.win-body { flex: 1 1 auto; display: flex; min-height: 0; }
+.win-nav { flex: 0 0 auto; padding: 0 4px 8px; }
+.win-content { flex: 1 1 auto; min-width: 0; overflow: auto; background: var(--bg-tertiary); border-top-left-radius: var(--radius-overlay); border-top: 1px solid var(--stroke-card); border-left: 1px solid var(--stroke-card); }
+
+/* ---- Page frame ---- */
+.page { padding: 24px; max-width: 1080px; }
+.page-head { margin-bottom: 20px; }
+.page-title { font-size: var(--type-title-size); font-weight: 600; line-height: var(--type-title-line); margin: 0; }
+.page-sub { font-size: 14px; color: var(--text-secondary); margin: 4px 0 0; }
+.toolbar { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; }
+.toolbar__spacer { flex: 1 1 auto; }
+
+/* ---- Dashboard grid: Source · Diffusion · Santé · Journal ---- */
+.dash { display: grid; grid-template-columns: 1.5fr 1fr; grid-template-areas: "source health" "diffusion health" "journal journal"; gap: 16px; align-items: start; }
+.a-source { grid-area: source; } .a-diffusion { grid-area: diffusion; } .a-health { grid-area: health; } .a-journal { grid-area: journal; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.muted { font-size: 13px; line-height: 20px; color: var(--text-secondary); }
+
+/* Drag & drop source (Postel's Law) */
+.dropzone { display: flex; align-items: center; gap: 12px; padding: 16px; border: 1.5px dashed var(--stroke-control-strong); border-radius: var(--radius-control); color: var(--text-secondary); cursor: pointer; background: transparent; text-align: left; width: 100%; font-family: var(--font-sans); font-size: 14px; }
+.dropzone:hover { border-color: var(--accent-fill); background: var(--subtle-secondary); color: var(--text-primary); }
+.dropzone--filled { border-style: solid; border-color: var(--stroke-card); cursor: default; }
+.dropzone__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dropzone__name { font-weight: 600; color: var(--text-primary); }
+.media-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.chip { font-family: var(--font-mono); font-size: 12px; background: var(--control-fill-secondary); border: 1px solid var(--stroke-card); border-radius: var(--radius-circle); padding: 3px 10px; color: var(--text-secondary); }
+
+/* Command preview */
+.cmd { position: relative; }
+.cmd__box { font-family: var(--font-mono); font-size: 12.5px; line-height: 19px; background: var(--control-fill-input); border: 1px solid var(--stroke-control); border-radius: var(--radius-control); padding: 10px 40px 10px 12px; white-space: pre-wrap; word-break: break-all; color: var(--text-primary); min-height: 20px; }
+.cmd__box--empty { color: var(--text-tertiary); font-family: var(--font-sans); }
+.cmd__copy { position: absolute; top: 6px; right: 6px; }
+
+/* Health / stats */
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.health-idle { display: flex; flex-direction: column; gap: 16px; }
+.primary-action { display: flex; gap: 8px; }
+.primary-action .n-btn { flex: 0 0 auto; }
+.why { font-size: 12.5px; line-height: 18px; color: var(--text-secondary); display: flex; gap: 8px; align-items: flex-start; }
+.why .n-icon { margin-top: 1px; color: var(--caution); }
+
+/* Journal console */
+.console { font-family: var(--font-mono); font-size: 12px; line-height: 18px; background: var(--control-fill-input); border: 1px solid var(--stroke-control); border-radius: var(--radius-control); padding: 8px 10px; height: 176px; overflow: auto; }
+.console__line { white-space: pre-wrap; word-break: break-word; color: var(--text-secondary); }
+.console__line--err { color: var(--critical); }
+.console__line--warn { color: var(--caution); }
+
+/* Session summary (Peak-End) */
+.summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 4px 0 14px; }
+
+/* ---- Profils / Channels CRUD ---- */
+.crud { display: grid; grid-template-columns: 1fr 380px; gap: 16px; align-items: start; }
+.crud--wide { grid-template-columns: 1fr 440px; }
+.list { border: 1px solid var(--stroke-card); border-radius: var(--radius-overlay); background: var(--surface-card); overflow: hidden; }
+.list-row { position: relative; display: flex; gap: 12px; align-items: center; padding: 12px 14px; cursor: pointer; border-bottom: 1px solid var(--stroke-divider); background: transparent; width: 100%; text-align: left; border-left: none; border-right: none; border-top: none; }
+.list-row:last-child { border-bottom: none; }
+.list-row:hover { background: var(--subtle-secondary); }
+.list-row--sel { background: var(--subtle-secondary); }
+.list-row--sel::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: var(--radius-circle); background: var(--accent-fill); }
+.list-row__body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.list-name { font-weight: 600; font-size: 14px; color: var(--text-primary); }
+.list-sub { font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-icon { color: var(--text-secondary); flex: 0 0 auto; }
+
+.editor { display: flex; flex-direction: column; gap: 14px; }
+.editor__section { font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 6px 0 -2px; display: flex; align-items: center; gap: 8px; }
+.editor__row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.editor__actions { display: flex; gap: 8px; margin-top: 4px; }
+
+/* Progressive disclosure (Hick's Law: "Avancé" folds away) */
+.disclose { border-top: 1px solid var(--stroke-divider); padding-top: 12px; margin-top: 4px; }
+.disclose__toggle { display: flex; align-items: center; gap: 8px; background: transparent; border: none; color: var(--text-primary); font-family: var(--font-sans); font-size: 14px; font-weight: 600; cursor: pointer; padding: 4px 0; width: 100%; }
+.disclose__toggle .n-icon { transition: transform var(--dur-fast) var(--ease-standard); color: var(--text-secondary); }
+.disclose__toggle[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.disclose__body { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; }
+
+/* Preset picker (choose a preset, not 15 fields) */
+.presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.preset { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--stroke-control-secondary); border-radius: var(--radius-control); background: var(--control-fill); cursor: pointer; text-align: left; font-family: var(--font-sans); }
+.preset:hover { background: var(--control-fill-secondary); }
+.preset--sel { border-color: var(--accent-fill); border-width: 2px; padding: 9px 11px; }
+.preset__icon { color: var(--accent-text-primary); flex: 0 0 auto; }
+.preset__name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.preset__sub { font-size: 11px; color: var(--text-secondary); font-family: var(--font-mono); }
+
+/* Demo state strip (kit aid, clearly marked) */
+.demo-strip { display: flex; align-items: center; gap: 8px; margin-top: 18px; padding: 8px 12px; border: 1px dashed var(--stroke-divider); border-radius: var(--radius-control); font-size: 12px; color: var(--text-tertiary); flex-wrap: wrap; }
+.demo-strip b { color: var(--text-secondary); font-weight: 600; }

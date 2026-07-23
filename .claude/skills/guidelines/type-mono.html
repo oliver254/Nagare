@@ -1,0 +1,12 @@
+<!-- @dsCard group="Type" viewport="700x190" name="Monospace" subtitle="Cascadia Mono / Consolas — command preview & log console" -->
+<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css"><style>
+html,body{margin:0}body{background:var(--bg-base);color:var(--text-primary);font-family:var(--font-sans);padding:18px}
+.lbl{font-size:12px;color:var(--text-secondary);margin-bottom:6px}
+.mono{font-family:var(--font-mono);font-size:13px;line-height:20px;background:var(--control-fill-input);border:1px solid var(--stroke-control);border-radius:var(--radius-control);padding:10px 12px;white-space:pre-wrap;word-break:break-all}
+.log{font-family:var(--font-mono);font-size:12px;line-height:18px;color:var(--text-secondary);margin-top:10px}
+.err{color:var(--critical)}
+</style></head><body>
+<div class="lbl">Aperçu de la commande (clé masquée)</div>
+<div class="mono">ffmpeg -re -stream_loop -1 -i in.mp4 -c:v h264_nvenc -preset p2 -rc cbr -b:v 3000k -maxrate 3000k -bufsize 3000k -g 60 -c:a aac -b:a 128k -ar 48000 -f flv rtmp://live.twitch.tv/app/••••</div>
+<div class="log">frame= 1820 fps= 60 q=23.0 bitrate=2998.4kbits/s speed=1.00x<br><span class="err">[flv] Failed to update header with correct duration.</span></div>
+</body></html>

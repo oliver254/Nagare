@@ -1,0 +1,67 @@
+/* ============================================================================
+   Nagare — Typography tokens
+   ----------------------------------------------------------------------------
+   Nagare's typeface is the Windows system font, SEGOE UI VARIABLE, and its type
+   scale is the WinUI 3 "text ramp" (the named TextBlock styles the XAML binds
+   to: Caption / Body / BodyStrong / Subtitle / Title / TitleLarge / Display).
+
+   FONT SUBSTITUTION NOTE — Segoe UI Variable and Consolas are Windows system
+   fonts; they are NOT redistributable and are not bundled here (no @font-face).
+   On Windows the stacks below resolve to the real fonts; on other platforms the
+   browser falls back to the platform UI sans / mono. See readme.md → Fonts.
+   ============================================================================ */
+
+:root {
+  /* Font families. Segoe UI Variable has optical size axes: "Display" for large
+     display/title text, "Text" for body sizes. Both are requested in-stack. */
+  --font-sans: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI",
+    "Selawik", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI",
+    system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace,
+    "SF Mono", "Menlo", monospace;
+
+  /* Weights — Fluent uses Regular for body, SemiBold for strong/titles. */
+  --fw-regular: 400; /* @kind font */
+  --fw-semibold: 600; /* @kind font */
+  --fw-bold: 700; /* @kind font */
+
+  /* ---- WinUI 3 type ramp: size / line-height / weight ---------------------
+     Font sizes are in px to match the XAML FontSize values 1:1. */
+
+  --type-caption-size: 12px;
+  --type-caption-line: 16px;
+  --type-caption-weight: var(--fw-regular);
+
+  --type-body-size: 14px;
+  --type-body-line: 20px;
+  --type-body-weight: var(--fw-regular);
+
+  --type-body-strong-size: 14px;
+  --type-body-strong-line: 20px;
+  --type-body-strong-weight: var(--fw-semibold);
+
+  --type-body-large-size: 18px;
+  --type-body-large-line: 24px;
+  --type-body-large-weight: var(--fw-regular);
+
+  --type-subtitle-size: 20px;
+  --type-subtitle-line: 28px;
+  --type-subtitle-weight: var(--fw-semibold);
+
+  --type-title-size: 28px;
+  --type-title-line: 36px;
+  --type-title-weight: var(--fw-semibold);
+
+  --type-title-large-size: 40px;
+  --type-title-large-line: 52px;
+  --type-title-large-weight: var(--fw-semibold);
+
+  --type-display-size: 68px;
+  --type-display-line: 92px;
+  --type-display-weight: var(--fw-semibold);
+
+  /* Body is the default reading size. */
+  --type-base-size: var(--type-body-size);
+  --type-base-line: var(--type-body-line);
+}

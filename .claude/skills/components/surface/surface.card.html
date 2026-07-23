@@ -1,0 +1,33 @@
+<!-- @dsCard group="Components" viewport="700x300" name="Surface" subtitle="Card (belted region) · EmptyState (documentation-as-UI)" -->
+<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css"><style>
+html,body{margin:0}body{background:var(--bg-base);color:var(--text-primary);font-family:var(--font-sans);padding:20px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+.muted{font-size:13px;color:var(--text-secondary);line-height:20px}
+</style></head><body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script type="text/babel">
+const { Card, EmptyState, Button, StatusBadge } = window.NagareDesignSystem_9475eb;
+function Demo(){
+  return (<div className="grid">
+    <Card title="Source" icon="folder-open">
+      <div className="muted">boucle.mp4 · 00:04:12 · 1920×1080 · 60 fps · h264 · aac</div>
+    </Card>
+    <Card title="Santé" icon="activity" badge={<StatusBadge tone="live">En direct</StatusBadge>}>
+      <div className="muted">Diffusion saine — vitesse 1,00x, aucun drop.</div>
+    </Card>
+    <div style={{gridColumn:"1 / -1"}}>
+      <Card>
+        <EmptyState icon="radio-tower" title="Aucun channel"
+          message="Créez un channel pour choisir où diffuser."
+          action={<Button variant="accent" icon="plus">Nouveau channel</Button>} />
+      </Card>
+    </div>
+  </div>);
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<Demo/>);
+</script>
+</body></html>

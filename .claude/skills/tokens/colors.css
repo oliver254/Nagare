@@ -1,0 +1,193 @@
+/* ============================================================================
+   Nagare — Color tokens
+   ----------------------------------------------------------------------------
+   Nagare is a WinUI 3 (Windows App SDK 2.2.0) app. It does NOT ship a bespoke
+   palette: it follows the Windows Fluent theme and the *system accent color*.
+   These tokens mirror the real Fluent 2 / WinUI theme resources the app binds
+   to via {ThemeResource ...} — expressed here as CSS custom properties so the
+   design system can render faithful light + dark specimens on the web.
+
+   RULE (from the UX brief, Von Restorff): one accent element per screen — the
+   primary button. Red (`--critical`) is reserved for a REAL anomaly
+   (speed < 1.0x, failure, reconnection), never decoration.
+
+   NEVER hard-code a color in a Nagare surface. Bind to a semantic token below
+   (the XAML equivalent is {ThemeResource}). Base ramp values are theme-neutral;
+   semantic aliases flip per theme.
+   ============================================================================ */
+
+:root {
+  /* ---- Accent ramp — Windows 11 "Default" system accent (blue). ----------
+     Real installs vary: the user's chosen accent overrides these. Shipped as
+     the reference default. Maps to SystemAccentColor + Light1-3 / Dark1-3. */
+  --accent-base: #0078d4;
+  --accent-light-1: #429ce3;
+  --accent-light-2: #76b9ed;
+  --accent-light-3: #a6d8ff;
+  --accent-dark-1: #005fb8;
+  --accent-dark-2: #004c87;
+  --accent-dark-3: #003a66;
+
+  /* ---- Neutral grey ramp (Fluent greys) — for specimens & solid surfaces -- */
+  --grey-0: #ffffff;
+  --grey-4: #fbfbfb;
+  --grey-8: #f9f9f9;
+  --grey-12: #f3f3f3;
+  --grey-16: #eeeeee;
+  --grey-24: #e5e5e5;
+  --grey-32: #dadada;
+  --grey-48: #c7c7c7;
+  --grey-96: #767676;
+  --grey-140: #4d4d4d;
+  --grey-168: #2c2c2c;
+  --grey-176: #282828;
+  --grey-188: #202020;
+  --grey-196: #1c1c1c;
+  --grey-204: #171717;
+
+  /* =========================================================================
+     LIGHT THEME (default) — semantic aliases the app actually binds to
+     ========================================================================= */
+
+  /* Text fill (TextFillColorPrimary/Secondary/Tertiary/Disabled) */
+  --text-primary: rgba(0, 0, 0, 0.8956);
+  --text-secondary: rgba(0, 0, 0, 0.6063);
+  --text-tertiary: rgba(0, 0, 0, 0.4458);
+  --text-disabled: rgba(0, 0, 0, 0.3614);
+  --text-on-accent: #ffffff;
+  --text-on-accent-secondary: rgba(255, 255, 255, 0.7);
+  --text-on-accent-disabled: rgba(255, 255, 255, 0.7);
+
+  /* Accent-toned text (hyperlinks, selected nav label) */
+  --accent-text-primary: var(--accent-dark-2);
+  --accent-text-secondary: var(--accent-dark-3);
+
+  /* Solid window/page backgrounds (SolidBackgroundFillColor*) — Mica base */
+  --bg-base: #f3f3f3;          /* window client area (Mica base tint) */
+  --bg-secondary: #eeeeee;
+  --bg-tertiary: #f9f9f9;      /* raised panes over base */
+  --bg-quarternary: #ffffff;
+
+  /* Layer & card fills (LayerFillColor*, CardBackgroundFillColor*) */
+  --layer-default: rgba(255, 255, 255, 0.5);
+  --layer-alt: #ffffff;
+  --surface-card: rgba(255, 255, 255, 0.7);
+  --surface-card-secondary: rgba(246, 246, 246, 0.5);
+  --surface-card-tertiary: rgba(255, 255, 255, 0.7);
+
+  /* Control fills (ControlFillColor*) — inputs, buttons */
+  --control-fill: rgba(255, 255, 255, 0.7);
+  --control-fill-secondary: rgba(249, 249, 249, 0.5);  /* hover */
+  --control-fill-tertiary: rgba(249, 249, 249, 0.3);   /* pressed */
+  --control-fill-disabled: rgba(249, 249, 249, 0.3);
+  --control-fill-input: #ffffff;                        /* solid text field */
+
+  /* Subtle fills (SubtleFillColor*) — transparent buttons, list hover */
+  --subtle-transparent: transparent;
+  --subtle-secondary: rgba(0, 0, 0, 0.0373);  /* hover */
+  --subtle-tertiary: rgba(0, 0, 0, 0.0241);   /* pressed */
+
+  /* Strokes (CardStrokeColor*, ControlStrokeColor*, DividerStrokeColor*) */
+  --stroke-card: rgba(0, 0, 0, 0.0578);
+  --stroke-card-solid: #ebebeb;
+  --stroke-control: rgba(0, 0, 0, 0.0578);
+  --stroke-control-secondary: rgba(0, 0, 0, 0.1622); /* bottom edge of inputs */
+  --stroke-control-strong: rgba(0, 0, 0, 0.4458);    /* checkbox/radio outline */
+  --stroke-divider: rgba(0, 0, 0, 0.0803);
+  --stroke-surface: rgba(117, 117, 117, 0.4);
+
+  /* Accent fills (AccentFillColor*) — the ONE accent element: primary button.
+     Light theme = SystemAccentColorDark1 family, white text. */
+  --accent-fill: var(--accent-dark-1);
+  --accent-fill-secondary: #0a6dc2;   /* hover — slightly lighter */
+  --accent-fill-tertiary: #1173c4;    /* pressed — lighter/flatter */
+  --accent-fill-disabled: rgba(0, 0, 0, 0.2169);
+
+  /* Semantic system colors (SystemFillColor*) — status, health, validation.
+     fg = text/icon/dot; bg = InfoBar / badge background. */
+  --success: #0f7b0f;
+  --success-bg: #dff6dd;
+  --caution: #9d5d00;
+  --caution-bg: #fff4ce;
+  --critical: #c42b1c;
+  --critical-bg: #fde7e9;
+  --attention: #005fb8;            /* informational */
+  --attention-bg: #f6f6f6;
+  --info-bg: #eff6fc;              /* informational InfoBar tint */
+
+  /* Focus ring (FocusStrokeColorOuter) & dialog scrim (SmokeFillColor) */
+  --focus-outer: rgba(0, 0, 0, 0.8956);
+  --focus-inner: #ffffff;
+  --smoke: rgba(0, 0, 0, 0.3);
+}
+
+/* ===========================================================================
+   DARK THEME — explicit override (.theme-dark) so specimens can pin a theme.
+   =========================================================================== */
+.theme-dark {
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.786);
+  --text-tertiary: rgba(255, 255, 255, 0.5442);
+  --text-disabled: rgba(255, 255, 255, 0.3628);
+  --text-on-accent: #000000;
+  --text-on-accent-secondary: rgba(0, 0, 0, 0.5);
+  --text-on-accent-disabled: rgba(255, 255, 255, 0.5302);
+
+  --accent-text-primary: var(--accent-light-3);
+  --accent-text-secondary: var(--accent-light-2);
+
+  --bg-base: #202020;
+  --bg-secondary: #1c1c1c;
+  --bg-tertiary: #282828;
+  --bg-quarternary: #2c2c2c;
+
+  --layer-default: rgba(58, 58, 58, 0.3);
+  --layer-alt: rgba(255, 255, 255, 0.0538);
+  --surface-card: rgba(255, 255, 255, 0.0512);
+  --surface-card-secondary: rgba(255, 255, 255, 0.0326);
+  --surface-card-tertiary: rgba(255, 255, 255, 0.0512);
+
+  --control-fill: rgba(255, 255, 255, 0.0605);
+  --control-fill-secondary: rgba(255, 255, 255, 0.0837);
+  --control-fill-tertiary: rgba(255, 255, 255, 0.0326);
+  --control-fill-disabled: rgba(255, 255, 255, 0.0419);
+  --control-fill-input: rgba(255, 255, 255, 0.0605);
+
+  --subtle-transparent: transparent;
+  --subtle-secondary: rgba(255, 255, 255, 0.0605);
+  --subtle-tertiary: rgba(255, 255, 255, 0.0419);
+
+  --stroke-card: rgba(0, 0, 0, 0.1);
+  --stroke-card-solid: #1c1c1c;
+  --stroke-control: rgba(255, 255, 255, 0.0698);
+  --stroke-control-secondary: rgba(255, 255, 255, 0.093);
+  --stroke-control-strong: rgba(255, 255, 255, 0.5442);
+  --stroke-divider: rgba(255, 255, 255, 0.0837);
+  --stroke-surface: rgba(117, 117, 117, 0.4);
+
+  /* Dark accent = SystemAccentColorLight2/3 family, BLACK text on the button. */
+  --accent-fill: var(--accent-light-2);
+  --accent-fill-secondary: #8fc5f0;
+  --accent-fill-tertiary: #6aa8d6;
+  --accent-fill-disabled: rgba(255, 255, 255, 0.1581);
+
+  --success: #6ccb5f;
+  --success-bg: #393d1b;
+  --caution: #fce100;
+  --caution-bg: #433519;
+  --critical: #ff99a4;
+  --critical-bg: #442726;
+  --attention: #60cdff;
+  --attention-bg: #2e2e2e;
+  --info-bg: #263b50;
+
+  --focus-outer: #ffffff;
+  --focus-inner: #000000;
+  --smoke: rgba(0, 0, 0, 0.3);
+}
+
+/* THEMING. Light is the default (:root). For dark, add class `theme-dark` to a
+   wrapper (or <html>). Nagare itself follows the Windows system theme; a web
+   consumer that wants automatic switching can toggle the class from a
+   prefers-color-scheme listener. Specimen cards pin a theme with
+   .theme-light / .theme-dark. */

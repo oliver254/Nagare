@@ -1,0 +1,20 @@
+<!-- @dsCard group="Colors" viewport="700x180" name="Text fill levels" subtitle="Primary / secondary / tertiary / disabled + on-accent" -->
+<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css"><style>
+html,body{margin:0}body{background:var(--bg-base);font-family:var(--font-sans);padding:18px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 24px}
+.row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid var(--stroke-divider)}
+.t{font-size:15px}.k{font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary)}
+.onacc{grid-column:1/-1;margin-top:8px;background:var(--accent-fill);border-radius:var(--radius-control);padding:10px 12px;display:flex;gap:18px;align-items:baseline}
+</style></head><body>
+<div class="grid">
+<div class="row"><span class="t" style="color:var(--text-primary)">Primary — titres, valeurs</span><span class="k">--text-primary</span></div>
+<div class="row"><span class="t" style="color:var(--text-secondary)">Secondary — libellés, aide</span><span class="k">--text-secondary</span></div>
+<div class="row"><span class="t" style="color:var(--text-tertiary)">Tertiary — placeholder</span><span class="k">--text-tertiary</span></div>
+<div class="row"><span class="t" style="color:var(--text-disabled)">Disabled — inactif</span><span class="k">--text-disabled</span></div>
+</div>
+<div class="onacc">
+<span class="t" style="color:var(--text-on-accent)">On-accent primary</span>
+<span class="t" style="color:var(--text-on-accent-secondary)">On-accent secondary</span>
+<span class="k" style="color:var(--text-on-accent-secondary)">--text-on-accent</span>
+</div>
+</body></html>
