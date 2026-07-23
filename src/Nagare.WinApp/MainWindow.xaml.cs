@@ -5,7 +5,8 @@ namespace Nagare.WinApp;
 
 /// <summary>
 /// Shell of the application: a <see cref="NavigationView"/> driving a <see cref="Frame"/>.
-/// The three pages are placeholders — the business views come in phase 4 of the plan.
+/// The three pages carry the business views; a fourth entry (Planifications) is expected in
+/// iteration 2 — see docs/product/stream-scheduling.md.
 /// </summary>
 public sealed partial class MainWindow : Microsoft.UI.Xaml.Window
 {

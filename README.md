@@ -9,7 +9,7 @@ avec un contrôle fin de l'encodage et un monitoring temps réel.
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
 [![C#](https://img.shields.io/badge/C%23-14-239120)](https://learn.microsoft.com/dotnet/csharp/)
-[![Tests](https://img.shields.io/badge/tests-252%20✓-success)](tests/)
+[![Tests](https://img.shields.io/badge/tests-260%20✓-success)](tests/)
 [![Licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
 </div>
@@ -131,7 +131,7 @@ ffmpeg -encoders | grep nvenc
 git clone https://github.com/oliver254/Nagare.git
 cd Nagare
 dotnet build Nagare.slnx
-dotnet test  Nagare.slnx     # 252 tests
+dotnet test  Nagare.slnx     # 260 tests
 ```
 
 ### Configurer ffmpeg
@@ -161,7 +161,7 @@ src/
   Nagare.ViewModels/       ViewModels (net10.0, zéro dépendance WinUI — donc testables)
   Nagare.WinApp/           interface Windows (WinUI 3) : XAML, converters, services de plateforme
 tests/
-  Nagare.UnitTests/        252 tests
+  Nagare.UnitTests/        260 tests
 docs/
   SPEC.md                  spécification produit
   ARCHITECTURE.md          architecture détaillée, ports, contrats

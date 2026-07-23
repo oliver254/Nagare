@@ -55,6 +55,7 @@ Nagare.WinApp/                        ← tout le XAML, et lui seul
 Nagare.ViewModels/                    ← projet séparé, net10.0, SANS dépendance WinUI
   DashboardViewModel, ProfilesViewModel, ChannelsViewModel, ViewModelBase
   Abstractions/          IUiDispatcher, IVideoFilePicker (implémentés côté WinApp)
+  Shell/                 ShutdownGuard — séquencement de l'arrêt (SPEC §5)
 ```
 
 **Les ViewModels vivent dans leur propre projet**, et non dans un dossier de
@@ -150,7 +151,7 @@ l'installation séparée du runtime Windows App SDK sur la machine cible.
   un projet sans dépendance WinUI (§4).
 
 Ces tests portent sur Domain/Infrastructure : ils sont **insensibles** au pivot UI.
-La suite compte **252 tests** au 2026-07-23.
+La suite compte **260 tests** au 2026-07-23.
 
 ### Phase 2 — Application → BrilliantMediator — ✅ **VALIDÉE (2026-07-14)**
 
@@ -234,7 +235,7 @@ Deux précisions par rapport au plan initial :
 
 ### Phase 6 — Vérification — ✅ **VALIDÉE (2026-07-23)**
 
-`dotnet build` : **0 erreur, 0 avertissement**. `dotnet test` : **252 tests, 0 échec**.
+`dotnet build` : **0 erreur, 0 avertissement**. `dotnet test` : **260 tests, 0 échec**.
 `dotnet list package --vulnerable --include-transitive` : **aucun paquet vulnérable**
 sur les 6 projets.
 
@@ -269,11 +270,26 @@ même que l'encadré de la phase 3 signalait comme piégeux. **Corrigés le 2026
    l'erreur d'origine perdue au passage. Le logger est maintenant résolu **avant**
    `StopAsync()` et conservé en variable locale.
 
-Vérification du correctif : trois `WM_CLOSE` postés sans intervalle sur la fenêtre
-— le gestionnaire réentre donc bien pendant son propre `await` — l'application sort
-en **code 0**, sans blocage et sans ffmpeg résiduel. Réserve d'honnêteté : sans
-diffusion active l'arrêt est quasi instantané, ce test prouve la réentrance mais
-**pas** le scénario d'orphelin de bout en bout, qui exige une vraie session ffmpeg.
+**La relecture du correctif y a trouvé une régression, corrigée à son tour.** La
+résolution du logger, déplacée hors du `catch`, avait atterri entre « arrêt en
+cours » et le bloc protégé : une exception à cet endroit laissait les drapeaux dans
+un état où la fenêtre s'annulait elle-même indéfiniment sans jamais atteindre le
+`finally` qui la libère — application infermable **et** ffmpeg orphelin. Le
+correctif d'un orphelin en recréait donc un autre.
+
+La leçon a été tirée à la racine : le séquencement vit désormais dans
+**`ShutdownGuard`** (`Nagare.ViewModels/Shell/`), une classe sans aucun type WinUI
+que `Nagare.UnitTests` peut atteindre. Le rapport d'erreur y est un **délégué capté
+à la construction**, donc plus aucune résolution de service ne se produit pendant un
+arrêt. **8 tests** couvrent la règle, dont ceux des deux défauts réels : le second
+clic pendant l'arrêt, et le rapporteur d'erreur qui lève.
+
+Vérification à l'exécution : trois `WM_CLOSE` postés sans intervalle sur la fenêtre,
+l'application sort en **code 0**, sans blocage et sans ffmpeg résiduel. Réserve
+d'honnêteté : sans diffusion active l'arrêt est quasi instantané, ce test prouve la
+réentrance mais **pas** le scénario d'orphelin de bout en bout, qui exige une vraie
+session ffmpeg. C'est précisément le trou que les tests de `ShutdownGuard` comblent :
+eux pilotent l'instant de la fin d'arrêt, ce qu'aucun lancement réel ne permet.
 
 Le reste des remarques de l'audit (code mort `IsCreating`, `IsBusy` non bindé,
 `LastError` non affiché, souscription tardive dans `LoadAsync`, exceptions loggées
