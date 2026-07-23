@@ -188,7 +188,8 @@ est encapsulé :
   `FakeFfmpegProcessRunner` pilote `Exited`/`StatsReceived` à la demande, et l'ordre de
   traitement est garanti par la boucle. C'est indispensable — **le coordinateur n'a
   aucun test aujourd'hui**, alors que c'est précisément la couture où vivait le bug
-  corrigé en `41856d9`.
+  corrigé en `41856d9`. *(Suite, 2026-07-14 : ce trou est comblé —
+  `tests/Nagare.UnitTests/Application/Streaming/StreamSessionCoordinatorTests.cs`.)*
 - La violation du SRP relevée par l'audit (le coordinateur cumule machine à états,
   buffer de logs, cycle de vie du process et ordonnancement) **n'est pas traitée ici** :
   la sortir du même lot brouillerait le correctif. Le ring buffer de logs reste

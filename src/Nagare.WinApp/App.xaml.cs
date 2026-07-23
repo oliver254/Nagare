@@ -9,6 +9,7 @@ using Nagare.Application;
 using Nagare.Infrastructure;
 using Nagare.ViewModels;
 using Nagare.ViewModels.Abstractions;
+using Nagare.ViewModels.Shell;
 using Nagare.WinApp.Services;
 
 namespace Nagare.WinApp;
@@ -24,7 +25,11 @@ public partial class App : Microsoft.UI.Xaml.Application
     private readonly IHost _host;
 
     private Window? _window;
-    private bool _shuttingDown;
+
+    // The close/shutdown sequencing lives in ShutdownGuard, in Nagare.ViewModels — where it can be
+    // unit-tested. See its remarks: the rule it holds (ffmpeg never survives the window) is one the
+    // spec calls non-negotiable, and it was got wrong once while it was inline here.
+    private ShutdownGuard? _shutdown;
 
     public App()
     {
@@ -94,68 +99,58 @@ public partial class App : Microsoft.UI.Xaml.Application
         // BEFORE Activate(): the first page loads on activation and resolves its ViewModel at once.
         _host.Services.GetRequiredService<MainWindowContext>().Attach(_window);
 
+        // Built here, not on the first close: the logger is resolved while the provider is still
+        // alive, so no service resolution happens in the middle of a shutdown.
+        var logger = _host.Services.GetRequiredService<ILogger<App>>();
+        _shutdown = new ShutdownGuard(
+            shutdownAsync: StopHostAsync,
+            closeWindow: () => _window?.Close(),
+            onError: ex => logger.LogError(ex, "Error while shutting the host down."));
+
         _window.AppWindow.Closing += OnMainWindowClosing;
         _window.Activate();
     }
 
     /// <summary>
-    /// Stops the host BEFORE letting the window close. The close is cancelled on first pass, the host
-    /// is stopped asynchronously, then the window is closed for real.
+    /// Stops the host BEFORE letting the window close. Which close is honoured and which is refused
+    /// is decided by <see cref="ShutdownGuard"/>, and tested there.
     ///
-    /// Blocking the UI thread on <c>StopAsync</c> instead would deadlock: the coordinator awaits the
-    /// completion of its mailbox loop without ConfigureAwait(false), so its continuation is posted
+    /// <para>Blocking the UI thread on <c>StopAsync</c> instead would deadlock: the coordinator awaits
+    /// the completion of its mailbox loop without ConfigureAwait(false), so its continuation is posted
     /// back to this very thread. Cancel-then-close keeps the message loop alive, which is what lets
-    /// ffmpeg actually be killed.
+    /// ffmpeg actually be killed.</para>
+    ///
+    /// <para>The one thing that matters in this method: <c>args.Cancel</c> is assigned
+    /// <b>synchronously</b>. WinUI reads it as soon as the handler returns, so a value set after an
+    /// await would arrive too late — which is why the handler is not async and the guard answers with
+    /// a plain bool.</para>
+    /// </summary>
+    private void OnMainWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
+        => args.Cancel = _shutdown?.RequestClose() ?? false;
+
+    /// <summary>
+    /// Stops the host, then disposes it — the disposal running even if the stop threw or timed out
+    /// (<c>HostOptions.ShutdownTimeout</c> is 30s by default: past it the token is cancelled and the
+    /// host rethrows). Disposal is what reaches the coordinator's last-resort
+    /// <c>Kill(entireProcessTree: true)</c>. Skipping it would let the window close, the process die —
+    /// and FFMPEG KEEP BROADCASTING, orphaned. SPEC §5 forbids exactly that.
     ///
     /// <para>The disposal is <b>asynchronous</b>, and that is not cosmetic. <c>ServiceProvider.Dispose()</c>
     /// THROWS on a singleton that implements <see cref="IAsyncDisposable"/> without
-    /// <see cref="IDisposable"/> — which is exactly what the StreamSessionCoordinator is. The
-    /// exception used to escape from the finally block BEFORE <c>Close()</c> was reached: clicking
-    /// the cross stopped the host but never closed the window, and the application hung, alive,
-    /// forever. Constaté en lançant réellement l'app.</para>
+    /// <see cref="IDisposable"/> — which is exactly what the StreamSessionCoordinator is.</para>
     /// </summary>
-    private async void OnMainWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
+    private async Task StopHostAsync()
     {
-        if (_shuttingDown)
-            return;   // second pass: shutdown is done, let the window go
-
-        args.Cancel = true;   // must be set before the first await
-        _shuttingDown = true;
-
         try
         {
-            try
-            {
-                await _host.StopAsync();
-            }
-            finally
-            {
-                // The disposal MUST run even if StopAsync threw or timed out (HostOptions.ShutdownTimeout
-                // is 30s by default: past it the token is cancelled and the host rethrows). Disposal is
-                // what reaches the coordinator's last-resort Kill(entireProcessTree: true). Skipping it
-                // would let the window close, the process die — and FFMPEG KEEP BROADCASTING, orphaned.
-                // SPEC §5 forbids exactly that.
-                await DisposeHostAsync();
-            }
-        }
-        catch (Exception ex)
-        {
-            _host.Services.GetRequiredService<ILogger<App>>()
-                .LogError(ex, "Error while shutting the host down.");
+            await _host.StopAsync();
         }
         finally
         {
-            // Whatever happened above, the window MUST close: an application that refuses to die is
-            // worse than one that dies badly.
-            _window?.Close();
+            if (_host is IAsyncDisposable asyncDisposable)
+                await asyncDisposable.DisposeAsync();
+            else
+                _host.Dispose();
         }
-    }
-
-    private async ValueTask DisposeHostAsync()
-    {
-        if (_host is IAsyncDisposable asyncDisposable)
-            await asyncDisposable.DisposeAsync();
-        else
-            _host.Dispose();
     }
 }

@@ -31,7 +31,8 @@ présentation, et le front ne contient que le template (aucune page métier
 | `Nagare.Domain` | **Inchangé** — zéro dépendance, ignore l'UI |
 | `Nagare.Application` | **Retouché** : commands/queries implémentent `ICommand<T>`/`IQuery<T>` ; handlers `HandleAsync` → `Handle` ; `Abstractions/Handlers.cs` (interfaces maison) supprimé. Ports et coordinateur inchangés. |
 | `Nagare.Infrastructure` | **Inchangé** — ffmpeg, Data Protection/DPAPI, repos JSON |
-| `Nagare.WinApp` | **Réécrit** en WinUI 3 |
+| `Nagare.ViewModels` | **Nouveau projet** (non prévu au plan initial) — les trois ViewModels, en `net10.0` sans aucune dépendance WinUI, donc testables (§4) |
+| `Nagare.WinApp` | **Réécrit** en WinUI 3 — ne contient plus que du XAML et ce qui en dépend |
 
 ### Point d'architecture assumé
 
@@ -41,15 +42,29 @@ l'infrastructure — exactement ce que fait MediatR. Assumée par pragmatisme.
 L'alternative puriste (conserver nos interfaces et adapter en Infrastructure)
 coûterait une couche d'indirection pour un bénéfice théorique.
 
-## 4. Structure cible de `Nagare.WinApp`
+## 4. Structure cible de la présentation
 
 ```
-App.xaml(.cs)          Host builder (Microsoft.Extensions.Hosting) + DI + fenêtre
-MainWindow.xaml(.cs)   Shell : NavigationView → Dashboard / Profiles / Channels
-Views/                 DashboardPage, ProfilesPage, ChannelsPage  (XAML)
-ViewModels/            DashboardViewModel, ProfilesViewModel, ChannelsViewModel (+ éditeurs)
-Services/              FilePickerService (choix du .mp4), UiDispatcher
+Nagare.WinApp/                        ← tout le XAML, et lui seul
+  App.xaml(.cs)          Host builder (Microsoft.Extensions.Hosting) + DI + fenêtre
+  MainWindow.xaml(.cs)   Shell : NavigationView → Dashboard / Profiles / Channels
+  Views/                 DashboardPage, ProfilesPage, ChannelsPage  (XAML)
+  Services/              FilePickerService (choix du .mp4), UiDispatcher, MainWindowContext
+  Converters/            ValueConverters.cs
+
+Nagare.ViewModels/                    ← projet séparé, net10.0, SANS dépendance WinUI
+  DashboardViewModel, ProfilesViewModel, ChannelsViewModel, ViewModelBase
+  Abstractions/          IUiDispatcher, IVideoFilePicker (implémentés côté WinApp)
+  Shell/                 ShutdownGuard — séquencement de l'arrêt (SPEC §5)
 ```
+
+**Les ViewModels vivent dans leur propre projet**, et non dans un dossier de
+`Nagare.WinApp` comme prévu initialement. Raison : un projet `net10.0` sans le
+moindre type XAML (`Brush`, `Visibility`, `DispatcherQueue`) est **testable en
+ligne de commande**, ce qu'un projet WinUI n'est pas. Les deux abstractions qui
+touchent réellement à l'UI (dispatcher, sélecteur de fichier) sont des interfaces
+implémentées côté `Nagare.WinApp`. C'est ce qui rend possible les tests de
+ViewModels de `tests/Nagare.UnitTests/ViewModels/`.
 
 Packages : `Microsoft.WindowsAppSDK`, `CommunityToolkit.Mvvm`,
 `BrilliantMediator`, `BrilliantMediator.SourceGenerator`.
@@ -119,18 +134,24 @@ le SDK — ne pas l'écrire.
 `WindowsAppSDKSelfContained=true` est important : il évite d'exiger
 l'installation séparée du runtime Windows App SDK sur la machine cible.
 
-### Phase 1 — Combler le trou des tests *(indépendante du pivot, parallélisable)*
+### Phase 1 — Combler le trou des tests — ✅ **VALIDÉE (2026-07-14)**
 
-`Nagare.UnitTests` ne contient **aucun test**. À écrire :
+*(indépendante du pivot, menée en parallèle)*
+
+`Nagare.UnitTests` était vide. Écrits depuis :
 
 - golden test du `FfmpegCommandBuilder` (commande exacte, caractère pour caractère) ;
 - version masquée de la commande (clé jamais en clair) ;
 - `StreamKeyScrubber` ;
 - machine à états `StreamSession` (transitions autorisées, rejets, événements émis) ;
 - invariants E1–E8 des value objects ;
-- `FfmpegStatsParser` (`InternalsVisibleTo` déjà en place).
+- `FfmpegStatsParser` (`InternalsVisibleTo` déjà en place) ;
+- `StreamSessionCoordinator` et `GetStartPreflightQuery` (couche Application) ;
+- les trois ViewModels — possible **uniquement** parce que `Nagare.ViewModels` est
+  un projet sans dépendance WinUI (§4).
 
 Ces tests portent sur Domain/Infrastructure : ils sont **insensibles** au pivot UI.
+La suite compte **260 tests** au 2026-07-23.
 
 ### Phase 2 — Application → BrilliantMediator — ✅ **VALIDÉE (2026-07-14)**
 
@@ -185,25 +206,113 @@ Ces tests portent sur Domain/Infrastructure : ils sont **insensibles** au pivot 
 > depuis le `PATH` — où il n'est **pas** sur cette machine. Le symptôme serait un « ffmpeg
 > introuvable » incompréhensible alors que le binaire est bien installé.
 
-### Phase 4 — Vues & ViewModels
+### Phase 4 — Vues & ViewModels — ✅ **VALIDÉE (2026-07-14)**
 
-1. **Channels** : CRUD, clé en `PasswordBox` (jamais réaffichée).
+1. **Channels** : CRUD, clé en `PasswordBox` (jamais réaffichée — le champ d'édition
+   est vidé même en modification, la clé étant illisible par construction).
 2. **Profiles** : CRUD, invariants d'encodage remontés en erreurs de validation.
 3. **Dashboard** : choix du fichier (`FilePickerService`), du profil, du channel ;
    **aperçu de la commande ffmpeg générée, clé masquée** (exigence de la spec) ;
    start / stop.
 
-### Phase 5 — Temps réel
+**Critère de sortie** : les trois pages câblées, les trois ViewModels couverts par
+des tests unitaires. ✅
 
-Abonnement à `ISessionMonitor`, marshalling `DispatcherQueue`, ring buffer 500
-lignes, throttle stats 1/s, `ListView` virtualisée, badge de statut
-(Starting / Running / Reconnecting / Stopped / Failed) et indicateur de santé
-(`speed < 1.0x` → alerte).
+### Phase 5 — Temps réel — ✅ **VALIDÉE (2026-07-14)**
 
-### Phase 6 — Vérification
+Abonnement à `ISessionMonitor`, marshalling par `IUiDispatcher` (implémenté sur
+`DispatcherQueue.TryEnqueue`), ring buffer 500 lignes, throttle stats 1/s,
+`ListView` virtualisée, badge de statut (Starting / Running / Reconnecting /
+Stopped / Failed) et indicateur de santé (`speed < 1.0x` → alerte).
 
-`dotnet build` + `dotnet test` verts, puis audit `reviewer` (Clean Arch, DDD,
-CQRS, non-fuite de la clé).
+Deux précisions par rapport au plan initial :
+
+- les lignes de log entrantes passent par une `ConcurrentQueue` drainée par **un
+  seul** rappel UI en attente — sans cette coalescence, un `TryEnqueue` par ligne
+  suffirait à saturer la file du dispatcher sous le débit de ffmpeg ;
+- les changements de **statut** court-circuitent le throttle : ils sont rares et
+  doivent être instantanés. Seules les stats pures sont retardées.
+
+### Phase 6 — Vérification — ✅ **VALIDÉE (2026-07-23)**
+
+`dotnet build` : **0 erreur, 0 avertissement**. `dotnet test` : **260 tests, 0 échec**.
+`dotnet list package --vulnerable --include-transitive` : **aucun paquet vulnérable**
+sur les 6 projets.
+
+Audit `reviewer` — **aucun bloquant sur les quatre axes exigés** :
+
+| Axe | Verdict |
+|---|---|
+| Non-fuite de la clé | ✅ étanche sur tous les chemins (DTO, aperçu, saisie, logs, exceptions) ; **aucun usage de `Clipboard` dans `src/`** ; un test par réflexion interdit toute propriété exposant une clé |
+| Sens des dépendances | ✅ garanti **par le compilateur** — `Nagare.ViewModels` ne référence aucun paquet WinUI ; `using Nagare.Infrastructure` n'apparaît que dans le composition root |
+| Garde-fous temps réel | ✅ ring buffer, throttle et coalescence corrects, couverts par des tests à dispatcher **différé** (un dispatcher inline ne prouverait rien) |
+| CQRS (ADR-0007) | ✅ cohérent ; aucune mutation dans une query |
+
+L'audit a en revanche trouvé **deux défauts sur le chemin d'arrêt** — l'endroit
+même que l'encadré de la phase 3 signalait comme piégeux. **Corrigés le 2026-07-23 :**
+
+1. **Le second clic sur la croix orphelinait ffmpeg.** Le garde
+   `if (_shuttingDown) return;` sortait **sans remettre `args.Cancel = true`**. Or
+   l'arrêt dure plusieurs secondes (grâce de 5 s sur ffmpeg, puis
+   `HostOptions.ShutdownTimeout`) et la fenêtre reste cliquable pendant tout ce
+   temps. Un utilisateur qui reclique, croyant que rien ne s'est passé, fermait la
+   fenêtre pour de vrai : boucle de messages terminée, process mort **avant**
+   `DisposeHostAsync()` — donc avant le `Kill(entireProcessTree)` de dernier
+   recours. **ffmpeg survivait, toujours en diffusion**, ce que la SPEC §5
+   interdit. Le `finally` interne, pourtant écrit pour ça, ne couvrait pas ce
+   chemin-là. Correctif : **deux** drapeaux — `_shuttingDown` (« en cours,
+   continuer d'annuler ») et `_readyToClose` (posé juste avant notre propre
+   `Close()`). La fermeture est désormais annulée à **tous** les passages sauf le
+   dernier.
+2. **Le gestionnaire d'erreur d'arrêt levait à son tour.** Le `catch` résolvait
+   `ILogger<App>` alors que le `finally` interne avait déjà disposé le
+   `ServiceProvider` : `ObjectDisposedException` depuis un `async void`, et
+   l'erreur d'origine perdue au passage. Le logger est maintenant résolu **avant**
+   `StopAsync()` et conservé en variable locale.
+
+**La relecture du correctif y a trouvé une régression, corrigée à son tour.** La
+résolution du logger, déplacée hors du `catch`, avait atterri entre « arrêt en
+cours » et le bloc protégé : une exception à cet endroit laissait les drapeaux dans
+un état où la fenêtre s'annulait elle-même indéfiniment sans jamais atteindre le
+`finally` qui la libère — application infermable **et** ffmpeg orphelin. Le
+correctif d'un orphelin en recréait donc un autre.
+
+La leçon a été tirée à la racine : le séquencement vit désormais dans
+**`ShutdownGuard`** (`Nagare.ViewModels/Shell/`), une classe sans aucun type WinUI
+que `Nagare.UnitTests` peut atteindre. Le rapport d'erreur y est un **délégué capté
+à la construction**, donc plus aucune résolution de service ne se produit pendant un
+arrêt. **8 tests** couvrent la règle, dont ceux des deux défauts réels : le second
+clic pendant l'arrêt, et le rapporteur d'erreur qui lève.
+
+Vérification à l'exécution : trois `WM_CLOSE` postés sans intervalle sur la fenêtre,
+l'application sort en **code 0**, sans blocage et sans ffmpeg résiduel. Réserve
+d'honnêteté : sans diffusion active l'arrêt est quasi instantané, ce test prouve la
+réentrance mais **pas** le scénario d'orphelin de bout en bout, qui exige une vraie
+session ffmpeg. C'est précisément le trou que les tests de `ShutdownGuard` comblent :
+eux pilotent l'instant de la fin d'arrêt, ce qu'aucun lancement réel ne permet.
+
+Le reste des remarques de l'audit (code mort `IsCreating`, `IsBusy` non bindé,
+`LastError` non affiché, souscription tardive dans `LoadAsync`, exceptions loggées
+non scrubbées) relève de l'UX ou du nettoyage et rejoint le chantier de conception
+`docs/design/prompt-ux-ui.md`.
+
+Passage réel à l'écran après la montée de version — Data Protection chiffre la clé de
+stream, un build vert ne dit rien de l'exécution : l'exécutable se lance, la fenêtre
+`Nagare` s'ouvre, la fermeture rend **code 0** (donc l'arrêt asynchrone de l'hôte
+n'interbloque pas, cf. l'encadré de la phase 3) et **aucun process ffmpeg ne survit**.
+
+> ⚠️ **La vérification a d'abord été bloquée en amont de la compilation.** L'avis
+> NU1903 publié sur `System.Security.Cryptography.Xml` 10.0.9 — tiré transitivement
+> par `Microsoft.AspNetCore.DataProtection` 10.0.9 — faisait échouer la
+> **restauration** : l'audit NuGet est traité en erreur (`Directory.Build.props`),
+> délibérément, parce que la clé de stream est en jeu. Ni build ni tests ne
+> tournaient plus, sur un dépôt pourtant inchangé depuis son dernier état vert.
+>
+> Correctif : passage à `Microsoft.AspNetCore.DataProtection` 10.0.10. Le bump seul
+> a déclenché une cascade de NU1605 (« passage à une version antérieure »), car les
+> `Microsoft.Extensions.*` étaient épinglés de façon hétérogène — 10.0.0 dans
+> `Nagare.Application` et `Nagare.ViewModels`, 10.0.9 ailleurs. **Toute la
+> solution est désormais alignée sur 10.0.10.**
 
 **Vérification bout-en-bout réelle — possible** : la commande de la spec a été
 validée contre un vrai ffmpeg (exit 0, encodage NVENC, débit conforme au CBR).
@@ -214,9 +323,10 @@ Une vraie diffusion reste à tester : elle exige une clé de diffusion valide.
 | # | Risque | Parade |
 |---|---|---|
 | ~~R1~~ | ~~Pas de template WinUI 3 ⇒ csproj manuel~~ | ✅ **Levé** : spike validé (build vert + fenêtre native). Config exacte en §7 phase 0. Repli WPF écarté. |
-| R2 | `FileOpenPicker` en non-empaqueté exige l'interop HWND WinRT | Connu, documenté, ~5 lignes |
-| R3 | UI figée par le débit de logs ffmpeg | Ring buffer borné + throttle (§5) — non négociables |
+| ~~R2~~ | ~~`FileOpenPicker` en non-empaqueté exige l'interop HWND WinRT~~ | ✅ **Levé** : `InitializeWithWindow.Initialize(picker, hwnd)` dans `FilePickerService`, le HWND venant de `MainWindowContext`. Sans lui, le sélecteur lève `COMException 0x80070578` à l'affichage. |
+| ~~R3~~ | ~~UI figée par le débit de logs ffmpeg~~ | ✅ **Levé** : ring buffer 500 + throttle 1/s + coalescence des rappels UI (§5, phase 5). Reste **non négociable** pour tout ajout ultérieur. |
 | ~~R4~~ | ~~ffmpeg/ffprobe introuvables~~ | ✅ **Levé** : la commande de la spec a été **validée contre un vrai ffmpeg** (exit 0, NVENC). Le chemin se configure via les **User Secrets** (jamais dans le dépôt) quand ffmpeg n'est pas dans le `PATH`. |
+| R5 | **Un avis de sécurité publié sur une dépendance casse le build d'un dépôt inchangé** — c'est l'effet voulu de l'audit NuGet traité en erreur, mais il frappe sans prévenir et bloque *avant* la compilation (survenu le 2026-07-23, cf. phase 6). | Assumé : on préfère un build rouge à une clé de stream exposée. Parade : garder les `Microsoft.Extensions.*` **alignés sur une seule version** dans toute la solution, sans quoi le moindre bump déclenche une cascade de NU1605. Un `Directory.Packages.props` (gestion centralisée des versions) rendrait l'alignement mécanique — à envisager si le cas se reproduit. |
 
 ## 9. Ce qui ne change pas
 

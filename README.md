@@ -9,26 +9,34 @@ avec un contrôle fin de l'encodage et un monitoring temps réel.
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
 [![C#](https://img.shields.io/badge/C%23-14-239120)](https://learn.microsoft.com/dotnet/csharp/)
-[![Tests](https://img.shields.io/badge/tests-192%20✓-success)](tests/)
+[![Tests](https://img.shields.io/badge/tests-260%20✓-success)](tests/)
 [![Licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
 </div>
 
 ---
 
-## ⚠️ État du projet
+## État du projet
 
-**Le cœur applicatif est terminé et testé ; l'interface ne l'est pas.**
-Nagare **n'est pas encore utilisable** en l'état.
+**Les quatre couches sont livrées et l'application est utilisable** : une vraie
+fenêtre Windows, pas un navigateur. Ce qui reste est du **soin d'interface**, pas
+de la fonctionnalité.
 
 | Couche | État |
 |---|---|
 | **Domain** — agrégats, machine à états, invariants | ✅ complet, testé |
 | **Application** — CQRS, coordinateur de session | ✅ complet — coordinateur en boucle séquentielle sans verrou ([ADR-0008](docs/adr/0008-synchronisation-coordinateur.md)) |
 | **Infrastructure** — ffmpeg, chiffrement, persistance | ✅ complet, testé |
-| **Presentation** — interface Windows | 🚧 **migration Blazor Server → WinUI 3** ([ADR-0006](docs/adr/0006-winui3-natif.md)) |
+| **Presentation** — interface Windows | ✅ **WinUI 3 natif** ([ADR-0006](docs/adr/0006-winui3-natif.md)) — 3 pages câblées, temps réel opérationnel |
 
-Le plan de migration est public : [`docs/plan-winui3-migration.md`](docs/plan-winui3-migration.md).
+La migration est terminée ; le plan et ses sept phases restent publics :
+[`docs/plan-winui3-migration.md`](docs/plan-winui3-migration.md).
+
+**Réserve d'honnêteté** : aucune **diffusion réelle** n'a encore été menée de bout
+en bout — cela exige une clé de diffusion valide. La commande générée, elle, a été
+validée contre un vrai ffmpeg. Le chantier ouvert est la **conception UX/UI**
+([`docs/design/prompt-ux-ui.md`](docs/design/prompt-ux-ui.md)) : l'application
+fonctionne, elle n'est pas encore agréable.
 
 ---
 
@@ -60,12 +68,19 @@ Clean Architecture + DDD + CQRS. Le `Domain` n'a **aucune dépendance** — pas 
 
 ```mermaid
 graph TD
-    WinApp["Nagare.WinApp<br/>WinUI 3 · composition root"] --> App["Nagare.Application<br/>CQRS, ports, coordinateur"]
+    WinApp["Nagare.WinApp<br/>WinUI 3 · vues XAML · composition root"] --> Vm["Nagare.ViewModels<br/>ViewModels · net10.0 · sans WinUI"]
+    WinApp --> App["Nagare.Application<br/>CQRS, ports, coordinateur"]
     WinApp --> Infra["Nagare.Infrastructure<br/>ffmpeg, Data Protection, JSON"]
+    Vm --> App
     Infra --> App
     App --> Dom["Nagare.Domain<br/>agrégats, VOs, événements"]
     Infra --> Dom
 ```
+
+Les **ViewModels vivent dans leur propre projet**, en `net10.0` et sans la moindre
+dépendance WinUI — c'est ce qui les rend testables en ligne de commande, et ce qui
+fait garantir **par le compilateur** qu'aucun type XAML ne fuit dans la logique de
+présentation.
 
 **Trois agrégats** : `StreamProfile` (profil d'encodage), `Channel` (destination + clé
 protégée), `StreamSession` (diffusion en cours — une machine à états à 5 statuts qui
@@ -116,7 +131,7 @@ ffmpeg -encoders | grep nvenc
 git clone https://github.com/oliver254/Nagare.git
 cd Nagare
 dotnet build Nagare.slnx
-dotnet test  Nagare.slnx     # 192 tests
+dotnet test  Nagare.slnx     # 260 tests
 ```
 
 ### Configurer ffmpeg
@@ -143,15 +158,18 @@ src/
   Nagare.Domain/           agrégats, value objects, machine à états, événements — zéro dépendance
   Nagare.Application/      CQRS (commands/queries/handlers), ports, coordinateur de session
   Nagare.Infrastructure/   FfmpegCommandBuilder, process runner, scrubber, DPAPI, persistance JSON
-  Nagare.WinApp/           interface Windows (WinUI 3)
+  Nagare.ViewModels/       ViewModels (net10.0, zéro dépendance WinUI — donc testables)
+  Nagare.WinApp/           interface Windows (WinUI 3) : XAML, converters, services de plateforme
 tests/
-  Nagare.UnitTests/        192 tests
+  Nagare.UnitTests/        260 tests
 docs/
   SPEC.md                  spécification produit
   ARCHITECTURE.md          architecture détaillée, ports, contrats
   domain-model.md          modèle du domaine en UML (mermaid)
   adr/                     décisions d'architecture (8 ADR)
-  plan-winui3-migration.md plan de migration en cours
+  design/                  conception UX/UI (chantier en cours)
+  product/                 cadrage produit des features à venir
+  plan-winui3-migration.md plan de migration — les 7 phases sont livrées
 ```
 
 ---
@@ -167,7 +185,13 @@ La suite couvre ce qui casse en silence :
 - la **machine à états** : chaque transition autorisée émet son événement, chaque
   transition interdite lève une exception de domaine ;
 - les **invariants d'encodage** (CBR ⇒ `maxrate == bitrate`, `bufsize ≥ bitrate`,
-  `0 < keyint_min ≤ GOP`, dimensions paires…), cas valides **et** invalides.
+  `0 < keyint_min ≤ GOP`, dimensions paires…), cas valides **et** invalides ;
+- le **coordinateur de session**, rendu déterministe par sa boucle séquentielle
+  ([ADR-0008](docs/adr/0008-synchronisation-coordinateur.md)) : un faux runner pilote
+  `Exited` et `StatsReceived` à la demande ;
+- les **ViewModels**, y compris les garde-fous temps réel — les tests utilisent un
+  dispatcher **différé**, car un dispatcher qui exécute en ligne prouverait qu'un code
+  non marshallé « marche » aussi.
 
 Ce sont ces tests qui ont révélé un bug réel : la reconnexion automatique ne fonctionnait
 pas — le compteur de tentatives ne dépassait jamais 1, rendant la branche d'abandon

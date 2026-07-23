@@ -193,7 +193,7 @@ Critères d'acceptation :
 
 | # | Question | Recommandation | Alternative écartée / future |
 |---|---|---|---|
-| A | L'app doit-elle être ouverte à l'heure H ? | **Oui.** Le déclencheur vit dans le process de l'app (Blazor Server localhost). App fermée à H ⇒ planification « Manquée » au redémarrage, sans démarrage tardif silencieux (diffuser en retard sans témoin est pire que ne pas diffuser). L'UI l'annonce clairement à la création (« l'application doit rester ouverte »). | Extension future : lancement par le Planificateur de tâches Windows ou un service Windows. Hors scope — à ne considérer que si des « Manquée » réelles s'accumulent. Un « rattrapage » optionnel (proposer de démarrer pour le temps restant si l'app rouvre pendant la fenêtre) est envisageable plus tard, **proposé**, jamais automatique. |
+| A | L'app doit-elle être ouverte à l'heure H ? | **Oui.** Le déclencheur vit dans le process de l'app (fenêtre WinUI 3 — ADR-0006 ; l'arbitrage est inchangé, seul l'hôte l'est). App fermée à H ⇒ planification « Manquée » au redémarrage, sans démarrage tardif silencieux (diffuser en retard sans témoin est pire que ne pas diffuser). L'UI l'annonce clairement à la création (« l'application doit rester ouverte »). | Extension future : lancement par le Planificateur de tâches Windows ou un service Windows. Hors scope — à ne considérer que si des « Manquée » réelles s'accumulent. Un « rattrapage » optionnel (proposer de démarrer pour le temps restant si l'app rouvre pendant la fenêtre) est envisageable plus tard, **proposé**, jamais automatique. |
 | B | Date dans le passé / « maintenant » | Date de début strictement future (tolérance de saisie ~1 min pour éviter les refus à la seconde près). « Démarrer maintenant pour N heures » n'est **pas** une planification : c'est le start manuel + durée (US-0, Lot 1). | Accepter une date passée « pour lancer tout de suite » : ambigu, doublonne US-0. |
 | C | Chevauchement de planifications | Conserver l'invariant « **une seule session active** ». Refus **à la création** de toute fenêtre chevauchant une planification « Programmée ». **Au déclenchement**, si une session (manuelle) est active : la planification échoue, la session en cours n'est jamais tuée — un flux qui tourne a toujours raison sur un automatisme. | File d'attente (« démarrer dès que libre ») : complexité et surprise pour un gain hypothétique. Multi-sessions : hors scope. |
 | D | Fin de fenêtre pendant une reconnexion (backoff) | **L'arrêt planifié gagne** : à l'heure de fin, les tentatives sont abandonnées et la session s'arrête (`Reconnexion → Arrete`, transition déjà autorisée). L'utilisateur a demandé N heures ; réessayer au-delà contredit son intention. Statut final : « Terminée » (la fenêtre est consommée). | Laisser le backoff finir sa tentative en cours : fenêtre dépassée, comportement imprévisible. |
@@ -207,9 +207,16 @@ planification. L'aperçu affiché à la création est indicatif.
 ## 5. Priorisation
 
 **Positionnement : itération 2**, après livraison de l'itération 1 (la
-planification s'appuie sur le start/stop, la machine à états et la persistance
-qui sont en cours d'implémentation — les déstabiliser maintenant serait
-contre-productif).
+planification s'appuie sur le start/stop, la machine à états et la persistance —
+les déstabiliser pendant leur implémentation aurait été contre-productif).
+
+> **Point de situation (2026-07-23).** L'itération 1 est **livrée** : les quatre
+> couches sont en place, l'application WinUI 3 tourne et les 7 phases du plan de
+> migration sont closes. La dépendance bloquante est donc levée. Reste ouvert
+> avant d'attaquer ce chantier : la **conception UX/UI**
+> (`docs/design/prompt-ux-ui.md`), qui doit lui laisser sa place en navigation
+> (4ᵉ entrée « Planifications ») et prévoir le champ « durée » optionnel au
+> lancement.
 
 Découpage en lots incrémentaux :
 

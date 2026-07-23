@@ -37,6 +37,14 @@ graph TD
     Vm --> Dom
 ```
 
+> **`Shell/ShutdownGuard` n'est pas un ViewModel**, et c'est assumé. Il séquence les demandes de
+> fermeture contre l'arrêt asynchrone de l'hôte — la règle « ffmpeg ne survit jamais à la fenêtre »
+> (SPEC §5). Elle vivait en ligne dans `App.xaml.cs`, où **rien n'est testable** : `Nagare.WinApp`
+> cible un TFM Windows que `Nagare.UnitTests` ne peut pas référencer. Elle s'y est trompée une fois
+> — un second clic sur la croix fermait la fenêtre pour de vrai et laissait ffmpeg diffuser. Une
+> règle que la spec qualifie de non négociable mérite un test : elle a donc déménagé là où les tests
+> l'atteignent. Aucun type WinUI n'entre ici, la fenêtre et l'hôte sont deux délégués.
+
 > **Pourquoi `Nagare.ViewModels`.** Dans les conventions .NET (Ardalis, Jason Taylor), le mot
 > « Presentation » désigne l'**hôte** — ici `Nagare.WinApp`. Le projet des ViewModels portait
 > autrefois ce nom : il annonçait donc son voisin, tout en ne contenant ni XAML ni fenêtre —
@@ -115,6 +123,7 @@ Nagare.Infrastructure/
 Nagare.ViewModels/            # net10.0, AUCUNE dépendance WinUI
   DashboardViewModel, ProfilesViewModel, ChannelsViewModel, ViewModelBase
   Abstractions/  IUiDispatcher, IVideoFilePicker   (implémentés côté WinApp)
+  Shell/         ShutdownGuard   (séquencement de l'arrêt — SPEC §5)
   DependencyInjection.cs   (AddNagareViewModels, CreateDashboard)
 
 Nagare.WinApp/                # WinUI 3, TFM Windows
