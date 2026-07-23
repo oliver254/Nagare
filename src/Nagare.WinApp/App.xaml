@@ -30,6 +30,7 @@
             <converters:KeyStateToBrushConverter x:Key="KeyStateToBrush" />
             <converters:AsTextConverter x:Key="AsText" />
             <converters:EncodingSummaryConverter x:Key="EncodingSummary" />
+            <converters:NullableHoursConverter x:Key="NullableHours" />
         </ResourceDictionary>
     </Application.Resources>
 

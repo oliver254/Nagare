@@ -209,6 +209,32 @@
                     Title="Environnement ffmpeg"
                     Message="{x:Bind ViewModel.EnvironmentIssue, Mode=OneWay}" />
 
+                <!-- Durée maximale optionnelle (ADR-0009, US-0). Vide = « Sans limite », la diffusion
+                     tourne jusqu'à l'arrêt manuel ; renseignée, la session s'arrête toute seule à
+                     l'échéance. Bornée à 24 h (garde-fou anti-faute de frappe, appliqué aussi par le
+                     domaine). La légende sous le champ montre l'heure de fin AVANT le lancement. -->
+                <StackPanel Spacing="4">
+                    <NumberBox
+                        Header="Durée maximale (heures)"
+                        HorizontalAlignment="Left"
+                        MinWidth="220"
+                        Minimum="0"
+                        Maximum="{x:Bind ViewModel.MaxDurationHours}"
+                        SmallChange="0.5"
+                        LargeChange="1"
+                        SpinButtonPlacementMode="Compact"
+                        PlaceholderText="Sans limite"
+                        IsEnabled="{x:Bind ViewModel.IsSessionActive, Converter={StaticResource Not}, Mode=OneWay}"
+                        Value="{x:Bind ViewModel.DurationHours, Converter={StaticResource NullableHours}, Mode=TwoWay}"
+                        AutomationProperties.Name="Durée maximale de diffusion en heures" />
+
+                    <TextBlock
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Visibility="{x:Bind ViewModel.DurationEndPreview, Converter={StaticResource NotNullToVisibility}, Mode=OneWay}"
+                        Text="{x:Bind ViewModel.DurationEndPreview, Mode=OneWay}" />
+                </StackPanel>
+
                 <!-- Zeigarnik / Goal-Gradient : ce qui reste à faire est visible en permanence,
                      sans clic. Forme (case) + mot, jamais la couleur seule. -->
                 <StackPanel Orientation="Horizontal" Spacing="24">
@@ -310,6 +336,14 @@
                         TextTrimming="CharacterEllipsis"
                         Visibility="{x:Bind ViewModel.LiveInputFilePath, Converter={StaticResource NotNullToVisibility}, Mode=OneWay}"
                         Text="{x:Bind ViewModel.LiveInputFilePath, Mode=OneWay}" />
+
+                    <!-- Heure d'arrêt automatique quand une durée maximale a été fixée (ADR-0009, US-0).
+                         Repliée pour une diffusion sans limite : rien à annoncer. -->
+                    <TextBlock
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Visibility="{x:Bind ViewModel.PlannedEndLabel, Converter={StaticResource NotNullToVisibility}, Mode=OneWay}"
+                        Text="{x:Bind ViewModel.PlannedEndLabel, Mode=OneWay}" />
 
                     <!-- Miller : cinq nombres nus deviennent cinq tuiles étiquetées. -->
                     <StackPanel Orientation="Horizontal" Spacing="8">
