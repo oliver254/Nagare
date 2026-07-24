@@ -62,27 +62,37 @@ public partial class App : Microsoft.UI.Xaml.Application
             ContentRootPath = AppContext.BaseDirectory
         });
 
-        // Leaving Microsoft.NET.Sdk.Web means losing the IMPLICIT loading of appsettings.json and of
-        // the User Secrets. Both are therefore declared here, explicitly. Skipping this would let
-        // FfmpegOptions.ExecutablePath silently fall back to "ffmpeg" resolved from the PATH — where
-        // it is not, on a machine whose ffmpeg lives outside the PATH (plan §7, phase 3).
+        // Leaving Microsoft.NET.Sdk.Web means losing the IMPLICIT loading of appsettings.json: the
+        // classic SDK references neither the generic host nor its configuration providers. Hence
+        // this explicit line — without it, the shipped defaults of FfmpegOptions would never be read.
         //
-        // User Secrets are NOT encrypted: they hold local configuration (ffmpeg paths, test key)
-        // only. Real channel keys are protected at rest by Data Protection/DPAPI (ADR-0005).
+        // This file carries DEFAULTS ONLY. The user's own ffmpeg paths do not come through
+        // IConfiguration at all: they live in %APPDATA%\Nagare\settings.json and reach the
+        // application through IFfmpegPaths, mutated synchronously on save (ADR-0010). That is also
+        // why User Secrets are gone — they needed the SDK and the sources, so they were out of reach
+        // of the very users who have to configure ffmpeg.
         builder.Configuration
-            .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: true, reloadOnChange: false)
-            .AddUserSecrets<App>(optional: true);
+            .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: true, reloadOnChange: false);
 
-        builder.Services.AddNagareApplication();
+        // Infrastructure BEFORE Application: hosted services start in registration order, so the
+        // FfmpegSettingsInitializer (Infrastructure) runs before the StreamSessionCoordinator
+        // (Application). That order is a cheap precaution, not what protects the paths today —
+        // the coordinator reads nothing when it starts, and the three adapters that launch a binary
+        // read IFfmpegPaths.Current at the moment they use it (ADR-0010). What actually guarantees
+        // that no screen can see unseeded paths is in OnLaunched: _host.StartAsync() completes
+        // BEFORE new MainWindow(). Keeping this order is what a hosted service that DOES probe on
+        // startup would need, the day one appears.
         builder.Services.AddNagareInfrastructure(builder.Configuration);
+        builder.Services.AddNagareApplication();
         builder.Services.AddNagareViewModels();
 
-        // UI-thread-bound services: the WinUI implementations of the two ports the ViewModels need.
-        // Both go through MainWindowContext, because the container is built BEFORE the window exists
-        // — nothing could capture a DispatcherQueue or an HWND at this point.
+        // UI-thread-bound services: the WinUI implementations of the ports the ViewModels need.
+        // They all go through MainWindowContext, because the container is built BEFORE the window
+        // exists — nothing could capture a DispatcherQueue or an HWND at this point.
         builder.Services.AddSingleton<MainWindowContext>();
         builder.Services.AddSingleton<IUiDispatcher, UiDispatcher>();
         builder.Services.AddSingleton<IVideoFilePicker, FilePickerService>();
+        builder.Services.AddSingleton<IExecutableFilePicker, ExecutableFilePickerService>();
 
         return builder.Build();
     }
@@ -91,6 +101,10 @@ public partial class App : Microsoft.UI.Xaml.Application
     {
         // Starts the hosted services — the StreamSessionCoordinator among them, whose lifecycle owns
         // the kill of the ffmpeg process on shutdown (SPEC §5).
+        //
+        // AWAITED BEFORE THE WINDOW EXISTS, and that is the structural guarantee of ADR-0010: the
+        // FfmpegSettingsInitializer has already applied the user's paths by the time any screen
+        // can be shown, let alone read them.
         await _host.StartAsync();
 
         _window = new MainWindow();

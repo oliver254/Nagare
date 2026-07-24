@@ -151,7 +151,7 @@ l'installation séparée du runtime Windows App SDK sur la machine cible.
   un projet sans dépendance WinUI (§4).
 
 Ces tests portent sur Domain/Infrastructure : ils sont **insensibles** au pivot UI.
-La suite compte **260 tests** au 2026-07-23.
+La suite comptait **260 tests** au 2026-07-23 (compte à jour dans le `README.md`).
 
 ### Phase 2 — Application → BrilliantMediator — ✅ **VALIDÉE (2026-07-14)**
 
@@ -193,18 +193,25 @@ La suite compte **260 tests** au 2026-07-23.
 > Parade retenue : `AppWindow.Closing` → `args.Cancel = true`, arrêt asynchrone de l'hôte, puis
 > `Close()` réel. La boucle de messages reste vivante, donc l'arrêt aboutit.
 
-> ⚠️ **Piège de configuration à ne pas rater.** En quittant `Microsoft.NET.Sdk.Web`, on perd
-> le chargement **implicite** des `appsettings.json` *et* des **User Secrets**. Le nouveau
-> host doit donc, explicitement :
-> - référencer `Microsoft.Extensions.Hosting`, `Microsoft.Extensions.Configuration.Json` et
->   **`Microsoft.Extensions.Configuration.UserSecrets`** (non inclus dans le SDK classique) ;
-> - appeler `AddJsonFile("appsettings.json")` et `AddUserSecrets<App>(optional: true)`
->   (`UserSecretsId = nagare-winapp-local`) ;
-> - copier `appsettings.json` dans le dossier de sortie.
+> ⚠️ **Piège de configuration relevé à l'époque — la moitié « User Secrets » est
+> DÉPASSÉE (superseded par l'ADR-0010).** En quittant `Microsoft.NET.Sdk.Web`, on perd
+> le chargement **implicite** des `appsettings.json` *et* des **User Secrets**. La parade
+> alors retenue référençait `Microsoft.Extensions.Hosting`,
+> `Microsoft.Extensions.Configuration.Json` **et
+> `Microsoft.Extensions.Configuration.UserSecrets`**, appelait `AddJsonFile("appsettings.json")`
+> *et* `AddUserSecrets<App>(optional: true)` (`UserSecretsId = nagare-winapp-local`), et copiait
+> `appsettings.json` dans le dossier de sortie.
 >
-> Sans ça, `FfmpegOptions.ExecutablePath` retombe **silencieusement** sur `"ffmpeg"` résolu
-> depuis le `PATH` — où il n'est **pas** sur cette machine. Le symptôme serait un « ffmpeg
-> introuvable » incompréhensible alors que le binaire est bien installé.
+> **Le volet User Secrets a depuis été entièrement supprimé** — package, `UserSecretsId` et
+> `AddUserSecrets<App>()` — parce qu'il exige le SDK **et** les sources, donc reste hors de
+> portée de qui utilise l'exe (ADR-0010 §2 ; `CONTRIBUTING.md` interdit de le réintroduire).
+> Les chemins ffmpeg se règlent désormais dans l'**écran Paramètres**, qui écrit
+> `%APPDATA%\Nagare\settings.json`.
+>
+> **Ce qui reste vrai** : `AddJsonFile("appsettings.json")` et la copie du fichier en sortie
+> doivent être explicites. Sans eux, `FfmpegOptions` ne porte plus son défaut livré et la
+> résolution retombe silencieusement sur `"ffmpeg"` depuis le `PATH` — là où il n'est
+> justement pas toujours.
 
 ### Phase 4 — Vues & ViewModels — ✅ **VALIDÉE (2026-07-14)**
 
@@ -325,7 +332,7 @@ Une vraie diffusion reste à tester : elle exige une clé de diffusion valide.
 | ~~R1~~ | ~~Pas de template WinUI 3 ⇒ csproj manuel~~ | ✅ **Levé** : spike validé (build vert + fenêtre native). Config exacte en §7 phase 0. Repli WPF écarté. |
 | ~~R2~~ | ~~`FileOpenPicker` en non-empaqueté exige l'interop HWND WinRT~~ | ✅ **Levé** : `InitializeWithWindow.Initialize(picker, hwnd)` dans `FilePickerService`, le HWND venant de `MainWindowContext`. Sans lui, le sélecteur lève `COMException 0x80070578` à l'affichage. |
 | ~~R3~~ | ~~UI figée par le débit de logs ffmpeg~~ | ✅ **Levé** : ring buffer 500 + throttle 1/s + coalescence des rappels UI (§5, phase 5). Reste **non négociable** pour tout ajout ultérieur. |
-| ~~R4~~ | ~~ffmpeg/ffprobe introuvables~~ | ✅ **Levé** : la commande de la spec a été **validée contre un vrai ffmpeg** (exit 0, NVENC). Le chemin se configure via les **User Secrets** (jamais dans le dépôt) quand ffmpeg n'est pas dans le `PATH`. |
+| ~~R4~~ | ~~ffmpeg/ffprobe introuvables~~ | ✅ **Levé** : la commande de la spec a été **validée contre un vrai ffmpeg** (exit 0, NVENC). Le chemin se configure dans l'**écran Paramètres de l'application** (jamais dans le dépôt) quand ffmpeg n'est pas dans le `PATH` — ADR-0010. |
 | R5 | **Un avis de sécurité publié sur une dépendance casse le build d'un dépôt inchangé** — c'est l'effet voulu de l'audit NuGet traité en erreur, mais il frappe sans prévenir et bloque *avant* la compilation (survenu le 2026-07-23, cf. phase 6). | Assumé : on préfère un build rouge à une clé de stream exposée. Parade : garder les `Microsoft.Extensions.*` **alignés sur une seule version** dans toute la solution, sans quoi le moindre bump déclenche une cascade de NU1605. Un `Directory.Packages.props` (gestion centralisée des versions) rendrait l'alignement mécanique — à envisager si le cas se reproduit. |
 
 ## 9. Ce qui ne change pas

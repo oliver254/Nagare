@@ -160,6 +160,13 @@ public sealed partial class DashboardPage : Page
 
     private void OnGoToChannels(object sender, RoutedEventArgs e) => NavigateTo("Channels");
 
+    /// <summary>
+    /// Same mechanism, for the toolchain: "ffmpeg est introuvable" now leads to the screen that
+    /// fixes it (ADR-0010). It lives here, in the code-behind, because the ViewModel knows nothing
+    /// of the shell — only that the issue is a path one (<c>IsFfmpegPathIssue</c>).
+    /// </summary>
+    private void OnGoToSettings(object sender, RoutedEventArgs e) => NavigateTo(MainWindow.SettingsTag);
+
     private static void NavigateTo(string tag)
     {
         if (App.Current.Services.GetRequiredService<MainWindowContext>().Window is MainWindow shell)

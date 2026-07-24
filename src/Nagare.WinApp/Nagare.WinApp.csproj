@@ -17,21 +17,18 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
 
     <RootNamespace>Nagare.WinApp</RootNamespace>
-    <!-- Config machine-locale (chemins ffmpeg, clé de test) hors du dépôt : User Secrets. -->
-    <UserSecretsId>nagare-winapp-local</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
 
-    <!-- En quittant Microsoft.NET.Sdk.Web, on perd le chargement IMPLICITE d'appsettings.json ET
-         des User Secrets : le SDK classique ne référence ni l'hôte générique ni ces fournisseurs de
-         configuration. Sans eux, FfmpegOptions.ExecutablePath retomberait silencieusement sur
-         « ffmpeg » résolu depuis le PATH (plan §7, phase 3). -->
+    <!-- En quittant Microsoft.NET.Sdk.Web, on perd le chargement IMPLICITE d'appsettings.json : le
+         SDK classique ne référence ni l'hôte générique ni ce fournisseur de configuration. Le
+         fichier ne porte que les valeurs par défaut livrées ; la configuration de l'utilisateur
+         passe par %APPDATA%\Nagare\settings.json et IFfmpegPaths (ADR-0010). -->
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.10" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.10" />
   </ItemGroup>
 
   <ItemGroup>

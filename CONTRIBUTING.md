@@ -64,23 +64,23 @@ Toute décision structurante donne lieu à un **ADR** dans `docs/adr/`. Une déc
 qui en annule une autre marque l'ancienne **⛔ REMPLACÉE** (on ne supprime jamais
 un ADR : l'historique des décisions a de la valeur).
 
-## Configuration locale : User Secrets
+## Configuration locale : dans l'application
 
 Le dépôt est **public**. Aucun chemin machine, aucune URL privée, **aucune clé** ne doit
 y être committé — pas même dans `appsettings.Development.json`.
 
-La configuration propre à votre poste vit dans les **User Secrets**
-(`UserSecretsId = nagare-winapp-local`, stockés dans
-`%APPDATA%\Microsoft\UserSecrets\`, hors du dépôt) :
+La configuration propre à votre poste — les chemins `ffmpeg`/`ffprobe` — se renseigne
+**dans l'application**, écran **⚙ Paramètres** : *Détecter* ou *Parcourir…*, *Tester*,
+*Enregistrer*. L'application écrit alors `%APPDATA%\Nagare\settings.json`, hors du
+dépôt, et ce fichier **prime** sur l'`appsettings.json` livré avec l'exécutable
+([ADR-0010](docs/adr/0010-configuration-ffmpeg-inscriptible.md)).
 
-```bash
-cd src/Nagare.WinApp
-dotnet user-secrets set "Nagare:Ffmpeg:ExecutablePath" "C:\chemin\vers\ffmpeg.exe"
-dotnet user-secrets set "Nagare:Ffmpeg:FfprobePath"    "C:\chemin\vers\ffprobe.exe"
-dotnet user-secrets list
-```
+Il n'y a **plus de User Secrets** dans ce projet : ils exigeaient le SDK et le dossier
+du projet, donc restaient hors de portée de quiconque utilise l'exe. Ne les
+réintroduisez pas — une seule voie de configuration, la même pour le contributeur et
+pour l'utilisateur.
 
-Laisser ces valeurs **vides** résout `ffmpeg`/`ffprobe` depuis le `PATH` (`FfmpegOptions`).
+Laisser les chemins **vides** résout `ffmpeg`/`ffprobe` depuis le `PATH`.
 
 ### 🔇 Rien de la machine ne sort dans le dépôt
 
@@ -101,16 +101,18 @@ le modèle exact de la carte.
 
 ### ⚠️ Frontière à ne pas franchir
 
-**Les User Secrets ne sont PAS chiffrés** — c'est du JSON en clair sur le disque.
-Microsoft les documente comme un confort de développement, pas comme une protection.
+**`settings.json` n'est PAS chiffré** — c'est du JSON en clair sous `%APPDATA%\Nagare`.
+Il *configure*, il ne *stocke pas de secret*.
 
 | Usage | Mécanisme |
 |---|---|
-| **Configurer** : chemins ffmpeg, URL RTMP de test, clé de test pour valider une vraie diffusion | **User Secrets** |
+| **Configurer** : chemins ffmpeg/ffprobe | **`settings.json`** (écran Paramètres, ADR-0010) |
 | **Stocker** : les clés des channels créés par l'utilisateur dans l'app | **Data Protection / DPAPI**, chiffrées au repos dans `%APPDATA%\Nagare` (ADR-0005) |
 
-Ne **jamais** déplacer le stockage des clés de channels vers les User Secrets : ce serait
-remplacer du chiffré par du clair, en violation de la spec (« clé chiffrée au repos »).
+Ne **jamais** écrire une clé de stream — même une clé de test — dans `settings.json`,
+dans `appsettings.json` ni dans quoi que ce soit d'autre que le stockage chiffré : ce
+serait remplacer du chiffré par du clair, en violation de la spec (« clé chiffrée au
+repos »). Une clé de test se saisit comme les autres, dans l'écran **Channels**.
 
 ## Règle anti-hallucination
 

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Nagare.Application.Abstractions;
 using Nagare.Infrastructure.Ffmpeg;
@@ -31,6 +32,18 @@ public static class DependencyInjection
         // Persistence
         services.AddSingleton<IStreamProfileRepository, JsonStreamProfileRepository>();
         services.AddSingleton<IChannelRepository, JsonChannelRepository>();
+        services.AddSingleton<IFfmpegSettingsStore, JsonFfmpegSettingsStore>();
+
+        // ffmpeg paths (ADR-0010): the runtime truth, its detection, and the hosted service that
+        // seeds it from settings.json. Registered before AddNagareApplication and its
+        // StreamSessionCoordinator, so the initializer starts first — a cheap precaution rather
+        // than a dependency: the coordinator reads no path when it starts, and the adapters that
+        // launch a binary read IFfmpegPaths.Current when they use it. What guarantees the screens
+        // never see unseeded paths is the composition root awaiting host startup before creating
+        // the window (App.OnLaunched).
+        services.AddSingleton<IFfmpegPaths, FfmpegPathProvider>();
+        services.AddSingleton<IFfmpegLocator, FfmpegLocator>();
+        services.AddSingleton<IHostedService, FfmpegSettingsInitializer>();
 
         // ffmpeg / ffprobe
         services.AddSingleton<IFfmpegCommandBuilder, FfmpegCommandBuilder>();

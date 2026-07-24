@@ -9,8 +9,10 @@ namespace Nagare.WinApp;
 
 /// <summary>
 /// Shell of the application: a <see cref="NavigationView"/> driving a <see cref="Frame"/>.
-/// The three pages carry the business views; a fourth entry (Planifications) is expected in
-/// iteration 2 — see docs/product/stream-scheduling.md.
+/// The three rail entries carry the business views; a fourth (Planifications) is expected in
+/// iteration 2 — see docs/product/stream-scheduling.md. The settings screen deliberately does NOT
+/// take one of them: it hangs off <c>IsSettingsVisible</c>, at the bottom of the pane, where a
+/// Windows 11 application puts it.
 /// </summary>
 public sealed partial class MainWindow : Microsoft.UI.Xaml.Window
 {
@@ -64,12 +66,42 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Window
     private static extern uint GetDpiForWindow(nint hwnd);
 
     /// <summary>
+    /// Tag of the settings screen. It is NOT a menu item — <see cref="NavigationView"/> owns that
+    /// entry — so it has no Tag in XAML to be read from, and this constant is the one name both
+    /// <see cref="NavigateTo"/> and its callers can agree on.
+    /// </summary>
+    public const string SettingsTag = "Settings";
+
+    /// <summary>
+    /// The settings entry is created from the NavigationView's TEMPLATE, so its label comes from the
+    /// OS language. Nagare's interface is French whatever Windows is set to, hence the assignment —
+    /// and it happens on Loaded rather than in the constructor, because
+    /// <see cref="NavigationView.SettingsItem"/> does not exist until the template has been applied.
+    /// </summary>
+    private void OnNavigationLoaded(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        Navigation.Loaded -= OnNavigationLoaded;
+
+        if (Navigation.SettingsItem is NavigationViewItem settings)
+            settings.Content = "Paramètres";
+    }
+
+    /// <summary>
     /// Sends the shell to a page by its tag. It exists for the dashboard's empty states: told that no
-    /// channel exists, the user must be able to go and create one from where the gap was named
-    /// (Paradox of the Active User) — not be left to find the rail on their own.
+    /// channel exists — or that ffmpeg is missing — the user must be able to go and fix it from where
+    /// the gap was named (Paradox of the Active User), not be left to find the rail on their own.
     /// </summary>
     public void NavigateTo(string tag)
     {
+        // Settings first: it is not in MenuItems, and the loop below would simply never find it.
+        if (tag == SettingsTag)
+        {
+            if (Navigation.SettingsItem is not null)
+                Navigation.SelectedItem = Navigation.SettingsItem;
+
+            return;
+        }
+
         foreach (var item in Navigation.MenuItems)
         {
             if (item is NavigationViewItem { Tag: string itemTag } menuItem && itemTag == tag)
@@ -82,6 +114,13 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Window
 
     private void OnNavigationSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
+        // The settings entry answers on its own flag, not on a Tag: it is the framework's item.
+        if (args.IsSettingsSelected)
+        {
+            Navigate(typeof(SettingsPage));
+            return;
+        }
+
         if (args.SelectedItem is not NavigationViewItem { Tag: string tag })
             return;
 
@@ -93,7 +132,14 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Window
             _ => null
         };
 
-        if (pageType is not null && ContentFrame.CurrentSourcePageType != pageType)
+        if (pageType is not null)
+            Navigate(pageType);
+    }
+
+    /// <summary>Navigates unless the frame is already showing that page.</summary>
+    private void Navigate(Type pageType)
+    {
+        if (ContentFrame.CurrentSourcePageType != pageType)
             ContentFrame.Navigate(pageType);
     }
 }

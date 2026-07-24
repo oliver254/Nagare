@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
-using Microsoft.Extensions.Options;
 using Nagare.Application.Abstractions;
 
 namespace Nagare.Infrastructure.Ffmpeg;
@@ -11,10 +10,8 @@ namespace Nagare.Infrastructure.Ffmpeg;
 /// `ffprobe -v quiet -print_format json -show_format -show_streams &lt;file&gt;` and maps the
 /// JSON to <see cref="MediaValidationResult"/>. Never executed by the unit tests.
 /// </summary>
-public sealed class FfprobeService(IOptions<FfmpegOptions> options) : IFfprobeService
+public sealed class FfprobeService(IFfmpegPaths paths) : IFfprobeService
 {
-    private readonly FfmpegOptions _options = options.Value;
-
     public async Task<MediaValidationResult> AnalyzeAsync(string filePath, CancellationToken ct)
     {
         if (!File.Exists(filePath))
@@ -35,7 +32,9 @@ public sealed class FfprobeService(IOptions<FfmpegOptions> options) : IFfprobeSe
     {
         var startInfo = new ProcessStartInfo
         {
-            FileName = _options.ResolvedFfprobe,
+            // Read here, not in a field: this singleton outlives any change the user makes to
+            // the configured paths (ADR-0010).
+            FileName = paths.Current.ResolvedFfprobe,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,

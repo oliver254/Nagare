@@ -26,6 +26,7 @@ public static class DependencyInjection
     {
         services.AddTransient<ProfilesViewModel>();
         services.AddTransient<ChannelsViewModel>();
+        services.AddTransient<SettingsViewModel>();
 
         return services;
     }

@@ -17,5 +17,9 @@ public sealed class NagareStorageOptions
 
     public string ProfilesFile => Path.Combine(ResolvedRoot, "profiles.json");
     public string ChannelsFile => Path.Combine(ResolvedRoot, "targets.json");
+
+    /// <summary>User-written application configuration — ffmpeg paths only (ADR-0010).</summary>
+    public string SettingsFile => Path.Combine(ResolvedRoot, "settings.json");
+
     public string KeyringDirectory => Path.Combine(ResolvedRoot, "keys");
 }

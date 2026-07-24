@@ -207,7 +207,19 @@
                     IsClosable="False"
                     Severity="Error"
                     Title="Environnement ffmpeg"
-                    Message="{x:Bind ViewModel.EnvironmentIssue, Mode=OneWay}" />
+                    Message="{x:Bind ViewModel.EnvironmentIssue, Mode=OneWay}">
+
+                    <!-- Le message nomme le manque ; le bouton y conduit (ADR-0010). Replié quand le
+                         motif est NVENC : les Paramètres n'y peuvent rien, et le message dit déjà
+                         quoi faire — choisir un profil libx264. -->
+                    <InfoBar.ActionButton>
+                        <Button
+                            Content="Configurer ffmpeg"
+                            MinHeight="32"
+                            Click="OnGoToSettings"
+                            Visibility="{x:Bind ViewModel.IsFfmpegPathIssue, Converter={StaticResource BoolToVisibility}, Mode=OneWay}" />
+                    </InfoBar.ActionButton>
+                </InfoBar>
 
                 <!-- Durée maximale optionnelle (ADR-0009, US-0). Vide = « Sans limite », la diffusion
                      tourne jusqu'à l'arrêt manuel ; renseignée, la session s'arrête toute seule à

@@ -9,7 +9,8 @@ Cible : `net10.0` / C# 14 (ADR-0001). UI : **WinUI 3 natif, non empaqueté**
 source-generated (ADR-0007 — **remplace** l'ADR-0003 handlers maison). Persistance
 JSON locale (ADR-0004). Clé de stream chiffrée au repos, jamais en clair hors
 Infrastructure (ADR-0005). Coordinateur en boucle séquentielle sans verrou (ADR-0008).
-Durée maximale de diffusion et arrêt programmé (ADR-0009).
+Durée maximale de diffusion et arrêt programmé (ADR-0009). Chemins ffmpeg
+configurés **depuis l'application**, sans User Secrets (ADR-0010).
 
 ---
 
@@ -94,9 +95,9 @@ La vraie raison est une **frontière de dépendances**, et elle tient en trois p
 La testabilité, elle, n'est pas la cause : c'est une **conséquence** agréable de cette
 séparation (les ViewModels sont en `net10.0`, `Nagare.UnitTests` les référence sans WinUI).
 
-Les ViewModels ne connaissent qu'`IMediator`, `ISessionMonitor` et deux abstractions maison
-(`IUiDispatcher`, `IVideoFilePicker`), implémentées côté `WinApp`. `Nagare.WinApp` ne
-garde que le XAML, les converters, l'interop HWND et le composition root.
+Les ViewModels ne connaissent qu'`IMediator`, `ISessionMonitor` et trois abstractions maison
+(`IUiDispatcher`, `IVideoFilePicker`, `IExecutableFilePicker`), implémentées côté `WinApp`.
+`Nagare.WinApp` ne garde que le XAML, les converters, l'interop HWND et le composition root.
 
 Arborescence interne indicative :
 
@@ -113,25 +114,31 @@ Nagare.Application/
   Channels/       idem
   Streaming/     StartStream/StopStream, StreamSessionCoordinator, StreamOperationException
   Media/         ValidateMediaFileQuery, MediaInfo
+  Settings/      GetFfmpegSettingsQuery, DetectFfmpegQuery, ValidateFfmpegPathsQuery,
+                 SaveFfmpegSettingsCommand, FfmpegPathInput   (ADR-0010)
 
 Nagare.Infrastructure/
   Ffmpeg/        FfmpegCommandBuilder, FfmpegProcessRunner, FfmpegStatsParser,
-                 FfprobeService, FfmpegEnvironmentProbe, StreamKeyScrubber
+                 FfprobeService, FfmpegEnvironmentProbe, StreamKeyScrubber,
+                 FfmpegPathProvider (chemins en vigueur), FfmpegLocator (détection),
+                 FfmpegSettingsInitializer (amorçage au démarrage)   — ADR-0010
   Security/      DataProtectionStreamKeyProtector
-  Persistence/   JsonFileStore, JsonStreamProfileRepository, JsonChannelRepository
+  Persistence/   JsonFileStore, JsonStreamProfileRepository, JsonChannelRepository,
+                 JsonFfmpegSettingsStore (settings.json — ADR-0010)
   DependencyInjection.cs   (AddNagareInfrastructure)
 
 Nagare.ViewModels/            # net10.0, AUCUNE dépendance WinUI
-  DashboardViewModel, ProfilesViewModel, ChannelsViewModel, ViewModelBase
-  Abstractions/  IUiDispatcher, IVideoFilePicker   (implémentés côté WinApp)
+  DashboardViewModel, ProfilesViewModel, ChannelsViewModel, SettingsViewModel, ViewModelBase
+  Abstractions/  IUiDispatcher, IVideoFilePicker, IExecutableFilePicker   (implémentés côté WinApp)
   Shell/         ShutdownGuard   (séquencement de l'arrêt — SPEC §5)
   DependencyInjection.cs   (AddNagareViewModels, CreateDashboard)
 
 Nagare.WinApp/                # WinUI 3, TFM Windows
-  App.xaml(.cs)  composition root : Host builder, config (JSON + User Secrets), DI
+  App.xaml(.cs)  composition root : Host builder, configuration (appsettings.json), DI
   MainWindow     shell : NavigationView
-  Views/         DashboardPage, ProfilesPage, ChannelsPage  (XAML)
-  Services/      UiDispatcher (DispatcherQueue), FilePickerService (interop HWND)
+  Views/         DashboardPage, ProfilesPage, ChannelsPage, SettingsPage  (XAML)
+  Services/      UiDispatcher (DispatcherQueue), FilePickerService et
+                 ExecutableFilePickerService (interop HWND)
   Converters/
 ```
 
@@ -524,6 +531,9 @@ domaine (S1–S2), pas un fait externe. L'UI borne sa saisie avec
 `StreamSession.MaxAllowedDuration` et affiche la `DomainException` si une valeur fautive
 passe malgré tout — la règle n'existe qu'à un seul endroit.
 
+`FfmpegMissing` / `FfprobeMissing` sont désormais **actionnables** : l'écran Paramètres
+(§6.6, ADR-0010) permet de renseigner les chemins sans quitter l'application.
+
 ### 3.3 Contrats de lecture
 
 ```csharp
@@ -604,9 +614,56 @@ public interface IFfprobeService
 
 public interface IFfmpegEnvironmentProbe
 {
-    /// Check au démarrage : ffmpeg/ffprobe présents (chemin configuré, sinon PATH),
+    /// Check au démarrage : ffmpeg/ffprobe présents (chemins EN VIGUEUR, sinon PATH),
     /// version, et disponibilité NVENC via `ffmpeg -encoders`.
     Task<FfmpegEnvironmentReport> CheckAsync(CancellationToken ct);
+    /// Le MÊME check, sur les chemins DONNÉS plutôt que sur ceux en vigueur. C'est
+    /// ce qui rend un bouton « Tester » possible AVANT enregistrement : l'utilisateur
+    /// obtient un verdict sur une paire candidate sans que l'application vive déjà
+    /// avec (ADR-0010).
+    Task<FfmpegEnvironmentReport> CheckAsync(FfmpegPathSettings paths, CancellationToken ct);
+}
+
+/// Une paire de chemins demandée. La chaîne vide est une valeur LÉGITIME :
+/// elle signifie « résoudre le binaire depuis le PATH » (ADR-0010).
+public sealed record FfmpegPathSettings(string ExecutablePath, string FfprobePath)
+{
+    public static FfmpegPathSettings Empty { get; }   // rien de configuré des deux côtés
+    public string ResolvedFfmpeg { get; }             // "ffmpeg" si ExecutablePath est vide
+    public string ResolvedFfprobe { get; }            // "ffprobe" si FfprobePath est vide
+}
+
+/// Chemins des binaires EN VIGUEUR (ADR-0010 §4). Seule source de vérité au runtime :
+/// ni IConfiguration ni IOptions<FfmpegOptions> ne sont lus par les adaptateurs.
+/// Lecture ET écriture sur la MÊME interface, parce qu'elles portent un seul fait :
+/// « quels chemins sont en vigueur ». La discipline ISP tient ici par l'USAGE plutôt
+/// que par le type — aucun des trois adaptateurs qui lancent un binaire n'appelle
+/// Apply ; seuls l'amorçage au démarrage et le handler d'enregistrement le font.
+public interface IFfmpegPaths
+{
+    FfmpegPathSettings Current { get; }
+    void Apply(FfmpegPathSettings settings);
+}
+
+/// Persistance de la configuration utilisateur (%APPDATA%\Nagare\settings.json, ADR-0010).
+/// Fichier en clair : il ne porte que des chemins — les clés restent sous ADR-0005.
+public interface IFfmpegSettingsStore
+{
+    /// Chemin absolu du fichier, MONTRÉ à l'utilisateur pour qu'il puisse le retrouver.
+    string SettingsFilePath { get; }
+    /// null = rien n'a jamais été configuré : pas de fichier, fichier vide, ou fichier
+    /// illisible. Ne lève jamais sur un fichier corrompu — l'app doit s'ouvrir, c'est
+    /// par elle qu'on le répare.
+    Task<FfmpegPathSettings?> LoadAsync(CancellationToken ct);
+    Task SaveAsync(FfmpegPathSettings settings, CancellationToken ct);
+}
+
+/// Détection automatique des binaires (ADR-0010) : PATH, puis emplacements
+/// d'installation usuels. Rend Empty si rien n'est trouvé, et une paire à moitié
+/// remplie si un seul des deux binaires l'est.
+public interface IFfmpegLocator
+{
+    Task<FfmpegPathSettings> LocateAsync(CancellationToken ct);
 }
 ```
 
@@ -760,9 +817,11 @@ g=60, keyint_min=60, sans résolution/fps ; aac 128k 48000 ; -re + loop) + cible
   lecture ligne à ligne asynchrone (ffmpeg écrit sa progression sur **stderr**).
 - Arrêt propre : écrire `q` sur stdin → attendre `gracePeriod` (défaut 5 s) →
   `Kill(entireProcessTree: true)`. Annulation par `CancellationToken` à chaque étape.
-- Chemins binaires : `Nagare:Ffmpeg:ExecutablePath` / `Nagare:Ffmpeg:FfprobePath`
-  dans `appsettings.json` ; fallback PATH (rappel addendum : ffmpeg absent du
-  PATH sur la machine de dev — le chemin configuré est la voie nominale).
+- Chemins binaires : lus sur **`IFfmpegPaths`** (§4.2, ADR-0010) au moment du
+  lancement — jamais sur `IOptions<FfmpegOptions>`. Même règle pour
+  `FfprobeService` et `FfmpegEnvironmentProbe` : ce sont les trois adaptateurs qui
+  lancent un binaire, et ils lisent tous la même source. Valeur vide ⇒ résolution
+  depuis le `PATH`.
 - `FfmpegStatsParser` (classe interne, pure, testée unitairement) : parse
   `frame= fps= bitrate= speed= drop= dup= time=` → `FfmpegStats`.
 
@@ -791,6 +850,52 @@ ASP.NET Core Data Protection, purpose `"Nagare.StreamKey.v1"`, keyring persisté
 sous `%APPDATA%\Nagare\keys` et protégé par **DPAPI** (Windows d'abord — l'API
 `IStreamKeyProtector` isole ce choix OS-spécifique, conformément à la spec).
 
+### 6.6 Configuration ffmpeg écrite par l'application (ADR-0010)
+
+**Trois types, trois responsabilités** — aucun n'assume celle d'un autre :
+
+| Type | Rôle |
+|---|---|
+| `FfmpegPathProvider` (singleton) | Implémente `IFfmpegPaths` : il **porte en mémoire** la paire en vigueur, initialisée sur `FfmpegOptions` (le défaut livré). Il **ne lit ni n'écrit aucun fichier**. Un champ `volatile` sur un record immuable suffit : un lecteur voit l'ancienne paire ou la nouvelle, jamais une paire à moitié appliquée. |
+| `FfmpegSettingsInitializer` (`IHostedService`) | **Amorce** au démarrage : lit le store et n'appelle `Apply` que s'il y a quelque chose à appliquer. Rien de stocké — fichier absent, vide ou illisible — laisse le défaut livré en place, **sans exception** : un hosted service qui lève avorterait l'hôte, donc la fenêtre par laquelle on répare justement la configuration ne s'ouvrirait jamais. |
+| `JsonFfmpegSettingsStore` | Implémente `IFfmpegSettingsStore` : **le seul à toucher le disque**. `%APPDATA%\Nagare\settings.json` (même racine que `profiles.json`/`targets.json`, via `NagareStorageOptions`), **écriture atomique** (fichier temporaire + `File.Replace`) et verrou applicatif, même discipline que `JsonFileStore` (§6.4). Un fichier malformé se lit « rien de configuré », jamais « erreur ». |
+
+**Précédence : utilisateur > défaut livré.** `settings.json` l'emporte sur
+l'`appsettings.json` livré à côté de l'exécutable (lui-même par défaut
+`"ffmpeg"`/`"ffprobe"`, résolus depuis le `PATH`) — c'est l'ordre d'amorçage
+ci-dessus qui la réalise, et il survit à une mise à jour de l'application.
+
+**L'enregistrement est séquencé par le handler** `SaveFfmpegSettingsHandler`
+(Application), et l'ordre *est* la décision : **sonder** la paire candidate
+(`IFfmpegEnvironmentProbe.CheckAsync(paths, ct)`), **écrire** seulement si elle
+répond, **appliquer** seulement une fois écrite. Écrire une paire qui ne répond pas
+persisterait une configuration cassée d'un démarrage à l'autre ; appliquer avant
+l'écriture ferait diverger mémoire et disque jusqu'au prochain démarrage, qui
+annulerait silencieusement le choix de l'utilisateur.
+
+`Apply` est **synchrone** : au retour de l'appel, tout consommateur — sonde
+d'environnement, preflight, lancement — voit déjà les nouveaux chemins. Aucun
+*file watcher*, aucun `IOptionsMonitor`. C'est le cœur de l'ADR-0010, et la raison
+pour laquelle `reloadOnChange` a été écarté. **Corollaire assumé** : un
+enregistrement pendant une diffusion active ne touche pas le process ffmpeg déjà
+lancé (les chemins sont lus au démarrage du process), mais un runner est créé **par
+lancement** — une reconnexion automatique relancerait donc un *autre* binaire au
+milieu de la même session.
+
+`FfmpegLocator` complète le tableau côté **détection** : il propose, il ne décide
+pas. Existence des fichiers seulement, dans l'ordre `PATH` puis emplacements
+d'installation usuels (winget, chocolatey, `Program Files`, dossier `ffmpeg`
+décompressé à la main) ; le verdict reste au probe, que l'utilisateur déclenche
+avec « Tester ».
+
+`settings.json` ne contient **que des chemins**. Aucune clé n'y entre jamais :
+les secrets restent chiffrés par Data Protection/DPAPI (§6.5, ADR-0005).
+
+`FfmpegOptions` (section `Nagare:Ffmpeg`) survit, mais ne porte plus que le
+**défaut livré** : plus aucun adaptateur ne l'injecte — seul `FfmpegPathProvider`
+le lit, une fois, à sa construction. Les User Secrets ont disparu du projet
+(package, `UserSecretsId` et `AddUserSecrets<App>()` compris).
+
 ---
 
 ## 7. Présentation — WinUI 3 (ADR-0006)
@@ -801,10 +906,16 @@ sous `%APPDATA%\Nagare\keys` et protégé par **DPAPI** (Windows d'abord — l'A
 | `ProfilesPage` | CRUD profils d'encodage (vidéo/audio/entrée) | `GetStreamProfilesQuery`, `SaveStreamProfileCommand`, `DeleteStreamProfileCommand` |
 | `ChannelsPage` | CRUD channels ; clé en **`PasswordBox`**, **jamais réaffichée** (le DTO ne porte qu'un `bool KeyConfigured`) ; champ vide en édition = **clé inchangée** | `GetChannelsQuery`, `SaveChannelCommand`, `DeleteChannelCommand` |
 
+**Un écran Paramètres** (ADR-0010) complète ces trois pages : détection automatique
+des binaires (`PATH`, puis emplacements d'installation usuels), désignation manuelle,
+test, enregistrement. C'est le **seul écrivain** des chemins ffmpeg ; toutes les autres
+pages n'en sont que des lectrices indirectes, à travers les adaptateurs (§6.2).
+
 Au démarrage : `GetFfmpegEnvironmentQuery` collecte l'état de la toolchain, puis
 `GetStartPreflightQuery` (§3.2) **décide** si un démarrage est possible et **pourquoi pas**.
 L'`InfoBar` bloquante affiche la traduction française de ce motif — ffmpeg/ffprobe
-introuvables, profil NVENC sur une machine sans NVENC. L'app reste utilisable
+introuvables, profil NVENC sur une machine sans NVENC — et, pour les binaires manquants,
+**renvoie vers l'écran Paramètres**, qui est la réponse à ce motif. L'app reste utilisable
 (configuration des profils/channels) sans ffmpeg.
 
 **Aucune règle métier ne vit dans un ViewModel.** Le `DashboardViewModel` ne *décide* de
@@ -852,6 +963,10 @@ Exigences spec — sans exécuter de binaire ffmpeg :
    session ; elle abandonne le backoff en `Reconnecting` ; elle est ignorée après
    un arrêt manuel, sur une session terminale, et lorsqu'elle provient d'une
    session précédente ; sans durée, aucune horloge n'arrête rien.
+8. **Configuration ffmpeg** (ADR-0010, §6.6) : `settings.json` absent ⇒ défaut de
+   `FfmpegOptions` ; `settings.json` présent ⇒ il **prime** ; fichier malformé ⇒
+   repli sans exception au démarrage ; l'enregistrement rend les nouveaux chemins
+   visibles **au retour de l'appel**.
 
 Le protecteur Data Protection et les repositories JSON se testeront en
 intégration plus tard (hors périmètre itération 1).

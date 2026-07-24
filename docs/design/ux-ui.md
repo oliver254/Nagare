@@ -72,7 +72,7 @@
 └────────────────┴─────────────────────────────────────────────┘
 ```
 
-Changements : icônes sur les 3 entrées, `SystemBackdrop="MicaBackdrop"`, wordmark **流 Nagare** en `PaneHeader`, `IsPaneToggleButtonVisible` conservé. *(`ExtendsContentIntoTitleBar` et la barre de titre personnalisée sont **reportés** : le wordmark tient dans le volet, et étendre le contenu dans la barre de titre demande de reprendre les zones de glisser et les boutons système — hors périmètre ici.)* La 4ᵉ entrée n'est **pas** ajoutée (elle n'existe pas) : le rail est simplement dimensionné pour l'accueillir.
+Changements : icônes sur les 3 entrées, `SystemBackdrop="MicaBackdrop"`, wordmark **流 Nagare** en `PaneHeader`, `IsPaneToggleButtonVisible` conservé. *(`ExtendsContentIntoTitleBar` et la barre de titre personnalisée sont **reportés** : le wordmark tient dans le volet, et étendre le contenu dans la barre de titre demande de reprendre les zones de glisser et les boutons système — hors périmètre ici.)* La 4ᵉ entrée n'est **pas** ajoutée (elle n'existe pas) : le rail est simplement dimensionné pour l'accueillir. *(ADR-0010)* L'écran **Paramètres** passe par `IsSettingsVisible="True"` — l'engrenage natif en bas du volet, pattern Fluent — précisément pour ne pas consommer ce slot.
 
 ### 4.2 Tableau de bord — état nominal (pas de diffusion)
 
@@ -187,7 +187,7 @@ Même structure. La carte d'édition conserve `PasswordBox` + la phrase de réas
 | `StartBlockReason` | Phrase | Emplacement |
 |---|---|---|
 | `NotChecked` | Vérification en cours… | à côté de `Démarrer` |
-| `FfmpegMissing` | ffmpeg est introuvable. Renseignez son chemin dans la configuration de l'application, ou ajoutez ffmpeg au PATH. | InfoBar, carte Lancement |
+| `FfmpegMissing` | ffmpeg est introuvable. Indiquez son chemin, ou ajoutez ffmpeg au PATH. | InfoBar **+ bouton d'action « Configurer ffmpeg »** → Paramètres, carte Lancement |
 | `FfprobeMissing` | ffprobe est introuvable : la validation des fichiers vidéo est impossible. | InfoBar, carte Lancement |
 | `NvencUnavailable` | Le profil sélectionné exige NVENC, indisponible sur cette machine. Choisissez un profil libx264. | InfoBar, carte Lancement |
 | `SessionAlreadyActive` | Une diffusion est déjà en cours. | à côté de `Démarrer` |
