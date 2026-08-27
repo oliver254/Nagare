@@ -13,6 +13,8 @@
     -->
     <PackageReference Include="Microsoft.AspNetCore.DataProtection" Version="10.0.10" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
+    <!-- IHostedService : FfmpegSettingsInitializer charge settings.json au démarrage (ADR-0010). -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.10" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.10" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
   </ItemGroup>

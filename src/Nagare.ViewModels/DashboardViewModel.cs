@@ -195,6 +195,19 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
     private string? _environmentIssue;
 
     /// <summary>
+    /// True when the environment issue is a MISSING BINARY — the one the settings screen can fix
+    /// (ADR-0010). It drives the "Configurer ffmpeg" action of the InfoBar, and nothing else: an
+    /// NVENC-less machine also raises an environment issue, and offering to reconfigure paths there
+    /// would point at a screen that has no answer ("Choisissez un profil libx264" is the answer, and
+    /// the message already says so).
+    ///
+    /// <para>Which SCREEN answers is the view's business — this only reports which KIND of issue is
+    /// on display. No navigation, no WinUI, here.</para>
+    /// </summary>
+    [ObservableProperty]
+    private bool _isFfmpegPathIssue;
+
+    /// <summary>
     /// The verdict, and the ONLY thing <see cref="CanStart"/> reads. It starts at
     /// <see cref="StartPreflight.NotChecked"/> — no verdict means no start, which is also what keeps
     /// the button off during the instant a fresh check is in flight.
@@ -457,6 +470,7 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
     private void ApplyVerdict(StartBlockReason reason)
     {
         EnvironmentIssue = EnvironmentMessage(reason);
+        IsFfmpegPathIssue = reason is StartBlockReason.FfmpegMissing or StartBlockReason.FfprobeMissing;
         MediaError = MediaMessage(reason);
         StartHint = StartHintMessage(reason);
         RefreshChecklist();
@@ -592,12 +606,16 @@ public sealed partial class DashboardViewModel : ViewModelBase, IDisposable
     /// <para>No configuration key is named here. Which key carries the ffmpeg path is Infrastructure's
     /// business, it changes with the configuration schema, and a ViewModel that quotes it is a
     /// ViewModel that lies the day it moves.</para>
+    ///
+    /// <para>Nor is the settings SCREEN named any more: the InfoBar now carries a button that leads
+    /// there (<see cref="IsFfmpegPathIssue"/>), and "renseignez son chemin dans la configuration de
+    /// l'application" next to a button labelled "Configurer ffmpeg" was the same sentence twice —
+    /// written, back then, about a screen that did not exist (ADR-0010).</para>
     /// </summary>
     private static string? EnvironmentMessage(StartBlockReason reason) => reason switch
     {
         StartBlockReason.FfmpegMissing =>
-            "ffmpeg est introuvable. Renseignez son chemin dans la configuration de l'application, "
-            + "ou ajoutez ffmpeg au PATH.",
+            "ffmpeg est introuvable. Indiquez son chemin, ou ajoutez ffmpeg au PATH.",
 
         StartBlockReason.FfprobeMissing =>
             "ffprobe est introuvable : la validation des fichiers vidéo est impossible.",

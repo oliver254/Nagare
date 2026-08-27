@@ -9,7 +9,7 @@ avec un contrôle fin de l'encodage et un monitoring temps réel.
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
 [![C#](https://img.shields.io/badge/C%23-14-239120)](https://learn.microsoft.com/dotnet/csharp/)
-[![Tests](https://img.shields.io/badge/tests-260%20✓-success)](tests/)
+[![Tests](https://img.shields.io/badge/tests-384%20✓-success)](tests/)
 [![Licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
 </div>
@@ -113,7 +113,8 @@ Détails et limites assumées : [ADR-0005](docs/adr/0005-protection-cle-stream.m
 ## Prérequis
 
 - **[.NET 10 SDK](https://dotnet.microsoft.com/download)**
-- **ffmpeg** et **ffprobe** — depuis le `PATH`, ou via un chemin configuré (voir ci-dessous)
+- **ffmpeg** et **ffprobe** — depuis le `PATH`, ou via un chemin renseigné dans
+  l'application (voir ci-dessous)
 - *(optionnel)* un **GPU NVIDIA** pour l'encodage matériel NVENC. À défaut, `libx264`
   (encodage logiciel) fonctionne.
 
@@ -131,23 +132,31 @@ ffmpeg -encoders | grep nvenc
 git clone https://github.com/oliver254/Nagare.git
 cd Nagare
 dotnet build Nagare.slnx
-dotnet test  Nagare.slnx     # 260 tests
+dotnet test  Nagare.slnx     # 384 tests
 ```
 
 ### Configurer ffmpeg
 
-Si ffmpeg n'est pas dans le `PATH`, renseignez son chemin via les **User Secrets** —
-**jamais** dans le dépôt :
+Si `ffmpeg` et `ffprobe` sont dans le `PATH`, il n'y a **rien à faire**. Sinon, tout
+se règle **dans l'application** — aucune ligne de commande, aucun fichier à éditer :
 
-```bash
-cd src/Nagare.WinApp
-dotnet user-secrets set "Nagare:Ffmpeg:ExecutablePath" "C:\chemin\vers\ffmpeg.exe"
-dotnet user-secrets set "Nagare:Ffmpeg:FfprobePath"    "C:\chemin\vers\ffprobe.exe"
-```
+1. lancez Nagare, puis ouvrez **⚙ Paramètres** ;
+2. **Détecter** — sonde le `PATH`, puis les emplacements d'installation usuels
+   (winget, chocolatey, `Program Files`) ;
+3. à défaut, **Parcourir…** et désignez vous-même les binaires
+   (`C:\chemin\vers\ffmpeg.exe`, `C:\chemin\vers\ffprobe.exe`) ;
+4. **Tester** — vérifie que les binaires répondent (version, disponibilité NVENC) ;
+5. **Enregistrer** — écrit `%APPDATA%\Nagare\settings.json`.
 
-> ⚠️ Les User Secrets ne sont **pas chiffrés** : ils servent à *configurer*, pas à
-> *stocker des secrets*. Les clés de stream de vos channels, elles, sont chiffrées par
-> DPAPI. Cette frontière est expliquée dans [CONTRIBUTING.md](CONTRIBUTING.md).
+Ce fichier **prime** sur l'`appsettings.json` livré à côté de l'exécutable : mettre
+l'application à jour n'écrase pas votre configuration. Le raisonnement complet est
+dans [ADR-0010](docs/adr/0010-configuration-ffmpeg-inscriptible.md).
+
+> ⚠️ `settings.json` est un fichier **en clair** : il ne contient que des **chemins**,
+> jamais une clé. Les clés de stream de vos channels sont, elles, chiffrées au repos
+> par DPAPI et ne quittent jamais ce chiffrement
+> ([ADR-0005](docs/adr/0005-protection-cle-stream.md)). Cette frontière est expliquée
+> dans [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
@@ -161,12 +170,12 @@ src/
   Nagare.ViewModels/       ViewModels (net10.0, zéro dépendance WinUI — donc testables)
   Nagare.WinApp/           interface Windows (WinUI 3) : XAML, converters, services de plateforme
 tests/
-  Nagare.UnitTests/        260 tests
+  Nagare.UnitTests/        384 tests
 docs/
   SPEC.md                  spécification produit
   ARCHITECTURE.md          architecture détaillée, ports, contrats
   domain-model.md          modèle du domaine en UML (mermaid)
-  adr/                     décisions d'architecture (8 ADR)
+  adr/                     décisions d'architecture (10 ADR)
   design/                  conception UX/UI (chantier en cours)
   product/                 cadrage produit des features à venir
   plan-winui3-migration.md plan de migration — les 7 phases sont livrées

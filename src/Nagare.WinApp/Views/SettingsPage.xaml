@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Nagare.WinApp.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    mc:Ignorable="d"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+
+    <!--
+        L'écran qui rend l'application configurable par elle-même (ADR-0010). C'est la réponse
+        désignée par l'InfoBar « Environnement ffmpeg » du tableau de bord : détecter, parcourir,
+        tester, enregistrer.
+
+        Deux régions ceinturées (Common Region) : les binaires, puis l'endroit où le choix est
+        écrit. La dernière ligne en « * » garde les cartes en haut plutôt que de les étirer.
+    -->
+    <Grid Margin="24" RowSpacing="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ================================================================= en-tête -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12">
+            <TextBlock Text="Paramètres" Style="{StaticResource TitleTextBlockStyle}" />
+
+            <!-- Doherty : « Détecter » balaie des dossiers, « Tester » lance trois process.
+                 Bien au-delà de 400 ms — l'attente doit se voir. -->
+            <ProgressRing
+                Width="20" Height="20"
+                VerticalAlignment="Center"
+                IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}"
+                AutomationProperties.Name="Opération en cours" />
+        </StackPanel>
+
+        <!-- Panne inattendue (dossier verrouillé, disque plein) : le verdict d'un test, lui, passe
+             par l'InfoBar de la carte, au contact des champs qu'il juge. -->
+        <InfoBar
+            Grid.Row="1"
+            IsOpen="{x:Bind ViewModel.ErrorMessage, Converter={StaticResource NotNullToBool}, Mode=OneWay}"
+            IsClosable="True"
+            Severity="Error"
+            Title="Erreur"
+            Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" />
+
+        <!-- ======================================================== binaires ffmpeg -->
+        <Border Grid.Row="2" Style="{StaticResource NagareCardStyle}">
+            <StackPanel Spacing="12">
+                <TextBlock Text="Binaires ffmpeg" Style="{StaticResource BodyStrongTextBlockStyle}" />
+
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- PropertyChanged et non le LostFocus par défaut d'un TextBox : « Tester » et
+                         « Enregistrer » doivent porter sur ce qui est écrit à l'écran, y compris
+                         quand le bouton est atteint au clavier. -->
+                    <TextBox
+                        Grid.Column="0"
+                        Header="Chemin de ffmpeg"
+                        PlaceholderText="Vide : résolu depuis le PATH"
+                        Text="{x:Bind ViewModel.ExecutablePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <Button
+                        Grid.Column="1"
+                        Content="Parcourir…"
+                        MinHeight="32"
+                        VerticalAlignment="Bottom"
+                        Command="{x:Bind ViewModel.BrowseFfmpegCommand}"
+                        AutomationProperties.Name="Parcourir pour choisir l'exécutable ffmpeg" />
+                </Grid>
+
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBox
+                        Grid.Column="0"
+                        Header="Chemin de ffprobe"
+                        PlaceholderText="Vide : résolu depuis le PATH"
+                        Text="{x:Bind ViewModel.FfprobePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <Button
+                        Grid.Column="1"
+                        Content="Parcourir…"
+                        MinHeight="32"
+                        VerticalAlignment="Bottom"
+                        Command="{x:Bind ViewModel.BrowseFfprobeCommand}"
+                        AutomationProperties.Name="Parcourir pour choisir l'exécutable ffprobe" />
+                </Grid>
+
+                <!-- Un champ vide est une valeur LÉGITIME, et rien ne le laisse deviner : il faut le
+                     dire, sous les champs, là où la question se pose. -->
+                <TextBlock
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    TextWrapping="Wrap"
+                    Text="Laissez un champ vide pour résoudre le binaire depuis le PATH de Windows." />
+
+                <!-- Von Restorff : « Enregistrer » est le seul élément accentué de l'écran, et il
+                     est au bout du parcours détecter → tester → enregistrer (Fitts). -->
+                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                    <Button
+                        Content="Détecter automatiquement"
+                        MinHeight="32"
+                        Command="{x:Bind ViewModel.DetectCommand}" />
+
+                    <Button
+                        Content="Tester"
+                        MinHeight="32"
+                        Command="{x:Bind ViewModel.TestCommand}" />
+
+                    <Button
+                        Content="Enregistrer"
+                        MinHeight="32"
+                        Style="{StaticResource AccentButtonStyle}"
+                        Command="{x:Bind ViewModel.SaveCommand}" />
+                </StackPanel>
+
+                <!-- Le verdict de la dernière détection / du dernier test / du dernier
+                     enregistrement. Non fermable : il est le seul retour de ces trois boutons, et il
+                     s'efface de lui-même dès qu'un chemin est modifié. -->
+                <InfoBar
+                    IsOpen="{x:Bind ViewModel.VerdictMessage, Converter={StaticResource NotNullToBool}, Mode=OneWay}"
+                    IsClosable="False"
+                    Severity="{x:Bind ViewModel.VerdictSeverity, Converter={StaticResource SeverityToInfoBar}, Mode=OneWay}"
+                    Title="{x:Bind ViewModel.VerdictTitle, Mode=OneWay}"
+                    Message="{x:Bind ViewModel.VerdictMessage, Mode=OneWay}" />
+            </StackPanel>
+        </Border>
+
+        <!-- ============================================== fichier de configuration -->
+        <Border Grid.Row="3" Style="{StaticResource NagareCardStyle}">
+            <StackPanel Spacing="8">
+                <TextBlock Text="Fichier de configuration" Style="{StaticResource BodyStrongTextBlockStyle}" />
+
+                <!-- Discret mais lisible ET sélectionnable : savoir où l'application écrit son choix
+                     est ce qui permet de le sauvegarder ou de le supprimer à la main. Ce fichier ne
+                     contient que des chemins — aucune clé n'y entre jamais (ADR-0005). -->
+                <TextBlock
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    TextWrapping="Wrap"
+                    IsTextSelectionEnabled="True"
+                    Text="{x:Bind ViewModel.SettingsFilePath, Mode=OneWay}" />
+
+                <TextBlock
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    TextWrapping="Wrap"
+                    Text="{x:Bind ViewModel.OriginLabel, Mode=OneWay}" />
+            </StackPanel>
+        </Border>
+
+    </Grid>
+</Page>

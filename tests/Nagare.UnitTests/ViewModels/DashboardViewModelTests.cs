@@ -313,6 +313,35 @@ public sealed class DashboardViewModelTests
         Assert.False(vm.StartCommand.CanExecute(null));
     }
 
+    /// <summary>
+    /// The environment InfoBar carries a way out — "Configurer ffmpeg" — but only for the issues the
+    /// settings screen can actually fix (ADR-0010). A machine without NVENC is not one of them: the
+    /// answer there is a libx264 profile, and the message says so. Offering to reconfigure paths
+    /// would point at a screen that has nothing for it.
+    /// </summary>
+    [Fact]
+    public async Task Only_a_missing_binary_offers_the_settings_screen_as_the_way_out()
+    {
+        var missing = new FfmpegEnvironmentReport(
+            FfmpegAvailable: false, FfprobeAvailable: false, FfmpegVersion: null,
+            NvencAvailable: false, Error: "ffmpeg not found (configured path or PATH).");
+
+        var (blind, _, _, _, _) = await CreateLoadedAsync(environment: missing);
+
+        Assert.NotNull(blind.EnvironmentIssue);
+        Assert.True(blind.IsFfmpegPathIssue);
+
+        var noNvenc = new FfmpegEnvironmentReport(
+            FfmpegAvailable: true, FfprobeAvailable: true, FfmpegVersion: "7.1",
+            NvencAvailable: false, Error: null);
+
+        var (vm, _, _, _, _) = await CreateLoadedAsync(environment: noNvenc);
+        vm.SelectedProfile = vm.Profiles.Single();   // an h264_nvenc profile
+
+        Assert.NotNull(vm.EnvironmentIssue);
+        Assert.False(vm.IsFfmpegPathIssue);
+    }
+
     [Fact]
     public async Task Start_is_refused_until_file_profile_and_channel_are_chosen()
     {

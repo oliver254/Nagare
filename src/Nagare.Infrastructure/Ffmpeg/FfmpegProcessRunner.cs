@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Nagare.Application.Abstractions;
 
 namespace Nagare.Infrastructure.Ffmpeg;
@@ -11,11 +10,9 @@ namespace Nagare.Infrastructure.Ffmpeg;
 /// stdin, wait gracePeriod, otherwise Kill(entireProcessTree: true).
 /// </summary>
 public sealed class FfmpegProcessRunner(
-    IOptions<FfmpegOptions> options,
+    IFfmpegPaths paths,
     ILogger<FfmpegProcessRunner> logger) : IFfmpegProcessRunner
 {
-    private readonly FfmpegOptions _options = options.Value;
-
     private Process? _process;
     private StreamKeyScrubber? _scrubber;
 
@@ -35,7 +32,9 @@ public sealed class FfmpegProcessRunner(
 
         var startInfo = new ProcessStartInfo
         {
-            FileName = _options.ResolvedFfmpeg,
+            // Resolved at launch time. A runner is created per launch, but the paths it reads
+            // live in a singleton the user can change between two broadcasts (ADR-0010).
+            FileName = paths.Current.ResolvedFfmpeg,
             RedirectStandardError = true,
             RedirectStandardOutput = true,
             RedirectStandardInput = true,
@@ -145,9 +144,9 @@ public sealed class FfmpegProcessRunner(
 
 /// <summary>Creates a fresh <see cref="FfmpegProcessRunner"/> per launch (see coordinator).</summary>
 public sealed class FfmpegProcessRunnerFactory(
-    IOptions<FfmpegOptions> options,
+    IFfmpegPaths paths,
     ILoggerFactory loggerFactory) : IFfmpegProcessRunnerFactory
 {
     public IFfmpegProcessRunner Create()
-        => new FfmpegProcessRunner(options, loggerFactory.CreateLogger<FfmpegProcessRunner>());
+        => new FfmpegProcessRunner(paths, loggerFactory.CreateLogger<FfmpegProcessRunner>());
 }

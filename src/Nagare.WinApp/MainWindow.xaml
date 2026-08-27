@@ -15,12 +15,16 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
+    <!-- Jakob : les paramètres d'une application Windows 11 sont l'engrenage EN BAS du volet, pas
+         une entrée de rail. IsSettingsVisible le pose là, sans consommer l'emplacement gardé pour
+         « Planifications » (itération 2). -->
     <NavigationView
         x:Name="Navigation"
         IsBackButtonVisible="Collapsed"
-        IsSettingsVisible="False"
+        IsSettingsVisible="True"
         PaneDisplayMode="Left"
         OpenPaneLength="220"
+        Loaded="OnNavigationLoaded"
         SelectionChanged="OnNavigationSelectionChanged">
 
         <!-- 流 : le glyphe de marque, seul ornement de l'application. -->

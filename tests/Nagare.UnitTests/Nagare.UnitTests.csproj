@@ -6,6 +6,10 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <!-- L'IMPLÉMENTATION du conteneur (les projets sources n'en référencent que les abstractions) :
+         le test de composition construit réellement le provider pour vérifier ce qui n'échouerait
+         qu'au lancement — sélection de constructeur et ordre des services hébergés (ADR-0010). -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.7.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />

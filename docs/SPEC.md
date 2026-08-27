@@ -69,10 +69,12 @@ monitoring temps réel.
 
 - **Cible retenue : `net10.0` / C# 14** au lieu du `.NET 9` mentionné plus haut
   (LTS, successeur direct, aucune API de la spec impactée). Voir ADR-0001.
-- **ffmpeg/ffprobe** : résolus depuis le `PATH`, ou via un chemin configuré dans la
-  section `Nagare:Ffmpeg`. Le chemin configurable prévu par la spec est nécessaire :
+- **ffmpeg/ffprobe** : résolus depuis le `PATH`, ou via un chemin **désigné par
+  l'utilisateur** — la section `Nagare:Ffmpeg` d'`appsettings.json` ne porte plus, elle,
+  que le **défaut livré**. Le chemin configurable prévu par la spec est nécessaire :
   ffmpeg n'est pas systématiquement dans le `PATH`. La configuration machine-locale
-  passe par les **User Secrets**, jamais par le dépôt (voir `CONTRIBUTING.md`).
+  passe par l'**écran Paramètres de l'application** (`%APPDATA%\Nagare\settings.json`),
+  jamais par le dépôt (ADR-0010, voir `CONTRIBUTING.md`).
 - **La commande exacte de la spec a été validée contre un vrai ffmpeg** : exit code 0,
   encodage NVENC effectif, débit conforme au CBR demandé.
   Le *golden test* prouve la conformité de la **chaîne de caractères** à la spec ;
